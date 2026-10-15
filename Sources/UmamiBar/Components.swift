@@ -49,15 +49,19 @@ enum Motion {
 /// Chart colors a site can use; each bar is a vertical gradient from `top` to `base`.
 /// Orange comes first so a single site keeps the brand color.
 enum Palette {
-    struct Swatch { let name: String; let top: NSColor; let base: NSColor }
+    struct Swatch { let top: NSColor; let base: NSColor }
     private static func rgb(_ hex: UInt32) -> NSColor {
         NSColor(srgbRed: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
     static let swatches = [
-        Swatch(name: L("橙"), top: rgb(0xFFAD78), base: rgb(0xE67B32)), Swatch(name: L("绿"), top: rgb(0x7ED9A8), base: rgb(0x1E9E68)),
-        Swatch(name: L("蓝"), top: rgb(0x8DB8FF), base: rgb(0x3B7DE8)), Swatch(name: L("紫"), top: rgb(0xC2A6FF), base: rgb(0x8B5CF6)),
-        Swatch(name: L("粉"), top: rgb(0xFFA3CC), base: rgb(0xE0528F)), Swatch(name: L("青"), top: rgb(0x7FE0D6), base: rgb(0x14A39A)),
-        Swatch(name: L("金"), top: rgb(0xFFD873), base: rgb(0xD99A0B)), Swatch(name: L("红"), top: rgb(0xFF9B8F), base: rgb(0xDE4B3E))]
+        Swatch(top: rgb(0xFFAD78), base: rgb(0xE67B32)), Swatch(top: rgb(0x7ED9A8), base: rgb(0x1E9E68)),
+        Swatch(top: rgb(0x8DB8FF), base: rgb(0x3B7DE8)), Swatch(top: rgb(0xC2A6FF), base: rgb(0x8B5CF6)),
+        Swatch(top: rgb(0xFFA3CC), base: rgb(0xE0528F)), Swatch(top: rgb(0x7FE0D6), base: rgb(0x14A39A)),
+        Swatch(top: rgb(0xFFD873), base: rgb(0xD99A0B)), Swatch(top: rgb(0xFF9B8F), base: rgb(0xDE4B3E))]
+    /// Localized color name; computed so it follows a language change.
+    static func name(_ index: Int) -> String {
+        [L("橙"), L("绿"), L("蓝"), L("紫"), L("粉"), L("青"), L("金"), L("红")][(index % swatches.count + swatches.count) % swatches.count]
+    }
     static func swatch(_ index: Int) -> Swatch { swatches[(index % swatches.count + swatches.count) % swatches.count] }
     /// A filled dot for menus and legends.
     static func dot(_ index: Int, diameter: CGFloat = 12) -> NSImage {
@@ -202,14 +206,14 @@ final class WebsiteChoice: NSButton {
 }
 /// Chart color dot on a selected website row; clicking it opens a menu of palette colors.
 final class ColorSwatch: NSButton {
-    var color: Int { didSet { needsDisplay = true; setAccessibilityValue(Palette.swatch(color).name) } }
+    var color: Int { didSet { needsDisplay = true; setAccessibilityValue(Palette.name(color)) } }
     var onPick: ((Int) -> Void)?
     private var hovering = false
     private var area: NSTrackingArea?
     init(color: Int, frame: NSRect) {
         self.color = color; super.init(frame: frame)
         isBordered = false; title = ""; target = self; action = #selector(openMenu)
-        toolTip = L("图表颜色"); setAccessibilityLabel(L("图表颜色")); setAccessibilityValue(Palette.swatch(color).name)
+        toolTip = L("图表颜色"); setAccessibilityLabel(L("图表颜色")); setAccessibilityValue(Palette.name(color))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override var isFlipped: Bool { true }
@@ -223,8 +227,8 @@ final class ColorSwatch: NSButton {
     override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
     @objc private func openMenu() {
         let menu = NSMenu()
-        for (index, swatch) in Palette.swatches.enumerated() {
-            let item = NSMenuItem(title: swatch.name, action: #selector(pick(_:)), keyEquivalent: "")
+        for index in Palette.swatches.indices {
+            let item = NSMenuItem(title: Palette.name(index), action: #selector(pick(_:)), keyEquivalent: "")
             item.target = self; item.tag = index; item.image = Palette.dot(index); item.state = index == color ? .on : .off
             menu.addItem(item)
         }

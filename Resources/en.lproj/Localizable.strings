@@ -115,3 +115,6 @@
 "API Key 保存在 macOS 钥匙串，网站选择与偏好保存在本地。" = "The API key is kept in the Keychain; selections and preferences stay on this Mac.";
 "时间序列日期格式不兼容，无法定位时间桶。" = "Unsupported time series date format.";
 "趋势时间与查询范围不一致，无法显示；请重试。" = "Trend times don't match the requested range. Try again.";
+"跟随系统" = "System";
+"语言" = "Language";
+"立即生效 · “跟随系统”使用 macOS 的语言设置" = "Applies immediately · “System” uses your macOS language";

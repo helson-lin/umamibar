@@ -21,10 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var timer: Timer?
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.editMenu()
+        NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { _ in NSApp.mainMenu = Self.editMenu() }
         controller = MainController()
         controller.onOpenSettings = { [weak self] tab in self?.openSettings(tab) }
         settings.onSave = { [weak self] connection, sites, colors in try self?.controller.apply(connection, sites: sites, colors: colors) }
         controller.onTotal = { [weak self] total, period in
+            // Also called again on a language change, so the tooltip follows it.
             self?.item.button?.title = " " + Self.menuCount(total)
             let exact = total.map { String($0) } ?? L("正在更新")
             self?.item.button?.toolTip = L("Umami · %@ · %@ · 已选网站访客合计（跨站未去重）", period.title, exact)
@@ -128,8 +130,16 @@ final class MainController: NSViewController {
         // Installs from before per-site colors have none saved; fill gives each site a distinct color.
         colors = SiteColors.fill(sites.map(\.id), saved: UserDefaults.standard.dictionary(forKey: SiteColors.key) as? [String: Int] ?? [:], count: Palette.swatches.count)
         screen = sites.isEmpty ? "empty" : "overview"
+        // publish() is a no-op until the popover view loads; the tooltip updates either way.
+        NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { [weak self] _ in
+            guard let self = self else { return }; self.publish(); if self.total != nil { self.report(self.total) }
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+
+    /// Last menu bar total, kept so the tooltip can be re-rendered in a new language.
+    private var total: Int?
+    private func report(_ value: Int?) { total = value; onTotal?(value, period) }
 
     override func loadView() {
         let material = NSVisualEffectView()
@@ -159,7 +169,7 @@ final class MainController: NSViewController {
         case "period":
             guard let raw = body["value"] as? Int, let value = Period(rawValue: raw) else { return }
             cancel(); period = value; UserDefaults.standard.set(raw, forKey: "period")
-            cache = [:]; statistics = [:]; previousVisitors = [:]; detailRows = nil; errors = [:]; lastUpdate = nil; paused = false; onTotal?(nil, period); refresh()
+            cache = [:]; statistics = [:]; previousVisitors = [:]; detailRows = nil; errors = [:]; lastUpdate = nil; paused = false; report(nil); refresh()
         case "dashboard":
             if let id = body["id"] as? String, let site = sites.first(where: { $0.id == id }), let url = connection?.dashboard(site) { NSWorkspace.shared.open(url) }
         case "quit": NSApp.terminate(nil)
@@ -175,7 +185,7 @@ final class MainController: NSViewController {
         UserDefaults.standard.set(chosen, forKey: SiteColors.key)
         cancel(); connection = proposed; sites = selected; colors = chosen
         cache = [:]; statistics = [:]; previousVisitors = [:]; errors = [:]; lastUpdate = nil; paused = false
-        detailID = nil; detailRows = nil; screen = "overview"; onTotal?(nil, period)
+        detailID = nil; detailRows = nil; screen = "overview"; report(nil)
         publish(); refresh()
     }
     private func publish() {
@@ -210,7 +220,7 @@ final class MainController: NSViewController {
             guard !queue.isEmpty else {
                 self.loading = false; self.tasks = []; self.lastUpdate = self.end
                 self.paused = blocked
-                self.onTotal?(fresh.count == self.sites.count ? fresh.values.reduce(0, +) : nil, self.period)
+                self.report(fresh.count == self.sites.count ? fresh.values.reduce(0, +) : nil)
                 self.publish(); return
             }
             let site = queue.removeFirst(); let path = "websites/\(site.id)"

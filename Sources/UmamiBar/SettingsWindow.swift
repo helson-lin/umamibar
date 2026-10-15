@@ -36,27 +36,34 @@ final class SettingsWindowController: NSWindowController {
 
     init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: SettingsPanel.width, height: SettingsPanel.height), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
-        window.title = L("UmamiBar 设置"); window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true; window.isReleasedWhenClosed = false
         super.init(window: window)
         let material = NSVisualEffectView()
         material.material = .popover; material.blendingMode = .behindWindow; material.state = .active
         window.contentView = material
         panel.frame = material.bounds; panel.autoresizingMask = [.width, .height]; material.addSubview(panel)
-        server.placeholderString = "https://api.umami.is/v1"; server.setAccessibilityLabel(L("Umami 服务地址"))
-        key.setAccessibilityLabel("API Key"); server.nextKeyView = key; key.nextKeyView = server
-        search.placeholderString = L("按名称或域名搜索"); search.setAccessibilityLabel(L("搜索网站"))
+        server.placeholderString = "https://api.umami.is/v1"; key.setAccessibilityLabel("API Key"); server.nextKeyView = key; key.nextKeyView = server
+        applyStrings()
         searchInput.onChange = { [weak self] in self?.reloadList() }
         render()
+        NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { [weak self] _ in self?.applyStrings(); self?.render() }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+    /// Text set on controls once rather than redrawn; reapplied when the language changes.
+    private func applyStrings() {
+        window?.title = L("UmamiBar 设置")
+        server.setAccessibilityLabel(L("Umami 服务地址"))
+        search.placeholderString = L("按名称或域名搜索"); search.setAccessibilityLabel(L("搜索网站"))
+        key.placeholderString = saved == nil ? L("输入 Umami API Key") : L("已保存 · 留空保留当前密钥")
+    }
 
     func show(_ tab: Tab, connection: Connection?, sites: [Website], colors: [String: Int]) {
         if window?.isVisible != true {
             saved = connection; self.colors = colors; generation = UUID(); busy = false
             candidate = nil; available = []; chosen = Set(sites.map(\.id)); listError = nil; search.stringValue = ""
             server.stringValue = connection?.base.absoluteString ?? "https://api.umami.is/v1"
-            key.stringValue = ""; key.placeholderString = connection == nil ? L("输入 Umami API Key") : L("已保存 · 留空保留当前密钥")
+            key.stringValue = ""; applyStrings()
             connectionStatus = ""; connectionFailed = false
             window?.center()
         }
@@ -102,7 +109,12 @@ final class SettingsWindowController: NSWindowController {
             save = button(L("保存并查看"), NSRect(x: 20, y: top + 256, width: 400, height: 36), style: .primary) { [weak self] in self?.saveSelection() }
             reloadList()
         case .general:
-            _ = button(L("退出 UmamiBar"), NSRect(x: 20, y: top + 104, width: 400, height: 36), style: .destructive) { NSApp.terminate(nil) }
+            // Language names stay in their own language, as in macOS, so anyone can find theirs.
+            for (i, code) in Localization.choices.enumerated() {
+                let b = button([L("跟随系统"), "简体中文", "English"][i], NSRect(x: 23 + CGFloat(i) * 132, y: top + 127, width: 131, height: 29), style: .segment) { Localization.set(code) }
+                b.selected = Localization.choice == code; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
+            }
+            _ = button(L("退出 UmamiBar"), NSRect(x: 20, y: top + 196, width: 400, height: 36), style: .destructive) { NSApp.terminate(nil) }
         }
         updateState()
     }
@@ -235,6 +247,9 @@ final class SettingsPanel: FlippedView {
             text(version.map { L("版本 %@", $0) } ?? L("开发版本"), NSRect(x: 20, y: top + 21, width: 400, height: 16), color: Ink.secondary)
             text(L("在菜单栏集中查看多个 Umami 网站的访客与趋势。"), NSRect(x: 20, y: top + 50, width: 400, height: 16))
             text(L("API Key 保存在 macOS 钥匙串，网站选择与偏好保存在本地。"), NSRect(x: 20, y: top + 70, width: 400, height: 15), size: 10, color: Ink.secondary)
+            text(L("语言"), NSRect(x: 20, y: top + 104, width: 400, height: 16), color: Ink.secondary)
+            fill(NSRect(x: 20, y: top + 124, width: 400, height: 35), NSColor(white: Ink.dark ? 0 : 0.2, alpha: Ink.dark ? 0.3 : 0.07), radius: 9)
+            text(L("立即生效 · “跟随系统”使用 macOS 的语言设置"), NSRect(x: 20, y: top + 167, width: 400, height: 15), size: 10, color: Ink.secondary)
         }
     }
 }

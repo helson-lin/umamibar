@@ -3,8 +3,34 @@ import Foundation
 /// Localized UI text. Keys are the Chinese source strings; en.lproj translates them and any
 /// missing entry falls back to the key. Format keys use %@ / %ld placeholders.
 func L(_ key: String, _ args: CVarArg...) -> String {
-    let format = Bundle.main.localizedString(forKey: key, value: nil, table: nil)
+    let format = Localization.bundle.localizedString(forKey: key, value: nil, table: nil)
     return args.isEmpty ? format : String(format: format, arguments: args)
+}
+
+/// The UI language: follow macOS, or a language chosen in Settings. Strings come from that
+/// language's .lproj bundle, so a change applies immediately without relaunching.
+enum Localization {
+    /// Language codes offered in Settings; "" follows the system.
+    static let choices = ["", "zh-Hans", "en"]
+    static let changed = Notification.Name("UmamiBarLanguageChanged")
+    private static let key = "language"
+    static var choice: String { UserDefaults.standard.string(forKey: key) ?? "" }
+    private(set) static var bundle = load()
+
+    static func set(_ code: String) {
+        guard choices.contains(code), code != choice else { return }
+        UserDefaults.standard.set(code, forKey: key)
+        // Also the app's own AppleLanguages, so system-provided text matches after a relaunch.
+        if code.isEmpty { UserDefaults.standard.removeObject(forKey: "AppleLanguages") } else { UserDefaults.standard.set([code], forKey: "AppleLanguages") }
+        bundle = load()
+        NotificationCenter.default.post(name: changed, object: nil)
+    }
+    private static func load() -> Bundle {
+        let available = Bundle.main.localizations.filter { $0 != "Base" }
+        let code = choice.isEmpty ? Bundle.preferredLocalizations(from: available, forPreferences: UserDefaults.standard.stringArray(forKey: "AppleLanguages")).first : choice
+        guard let code = code, let path = Bundle.main.path(forResource: code, ofType: "lproj"), let bundle = Bundle(path: path) else { return .main }
+        return bundle
+    }
 }
 
 struct Website: Codable, Equatable {

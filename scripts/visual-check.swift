@@ -89,6 +89,13 @@ func settingsCheck(appearance: String, screen: String) {
   }
   if screen == "settings-websites" { checks.prefix(3).forEach { $0.performClick(nil) }; precondition(controls(ColorSwatch.self).count == 3, "Swatches missing") }
  }
+ if CommandLine.arguments.contains("--language-test") {
+  // Switching language in 通用 must redraw the open window immediately, then restore "System".
+  tap(L("通用")); tap("English")
+  precondition(L("通用") == "General" && controls(PaintedButton.self).contains { $0.title == "General" }, "English not applied")
+  tap(L("跟随系统")); precondition(Localization.choice == "", "System not restored")
+  print("Language switch passed")
+ }
  tap(["settings-connection": L("连接"), "settings-websites": L("网站"), "settings-general": L("通用")][screen] ?? L("连接"))
  RunLoop.main.run(until: Date().addingTimeInterval(0.3))
  let frame = window.contentView!.superview!

@@ -139,7 +139,7 @@ The app supports **API keys**, not username/password login. Compatibility with o
 
 ### Language
 
-UmamiBar is available in English and Simplified Chinese. It follows your macOS language; to choose per app, use System Settings → General → Language & Region → Applications. Other languages fall back to English. UI strings live in `Resources/<lang>.lproj/Localizable.strings`, keyed by the Chinese source text passed to `L("…")`; `tests-release/test_localization.py` fails if a string is missing a translation.
+UmamiBar is available in English and Simplified Chinese. Choose System, 简体中文 or English under Settings → General → Language; the change applies immediately. System follows your macOS language, and any language other than Chinese falls back to English. UI strings live in `Resources/<lang>.lproj/Localizable.strings`, keyed by the Chinese source text passed to `L("…")`; `tests-release/test_localization.py` fails if a string is missing a translation.
 
 ## Explore your websites
 
