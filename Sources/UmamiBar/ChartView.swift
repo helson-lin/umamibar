@@ -5,7 +5,30 @@ final class ChartView: NSView {
     override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self); onClick?() }
     var colorIndex = 0
     var showsScale = true
-    var points: [Point] = [] { didSet { rebuildTracking(); needsDisplay = true } }
+    // Bars grow in only when data first arrives into an empty, on-screen chart; refreshes with existing data stay still.
+    var points: [Point] = [] { didSet { if oldValue.isEmpty && !points.isEmpty && window != nil { startGrowth() }; rebuildTracking(); needsDisplay = true } }
+    private static let growthDuration: CFTimeInterval = 0.22
+    private var growthStart: CFTimeInterval?
+    private var growthTimer: Timer?
+    /// Eased 0...1 progress of the current growth; 1 when idle.
+    private var growth: CGFloat {
+        guard let start = growthStart else { return 1 }
+        return CGFloat(Motion.easeOutProgress(min(1, max(0, (CACurrentMediaTime() - start) / Self.growthDuration))))
+    }
+    private func startGrowth() {
+        growthTimer?.invalidate(); growthStart = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            guard let self = self, let start = self.growthStart else { timer.invalidate(); return }
+            if CACurrentMediaTime() - start >= Self.growthDuration { self.growthStart = nil; timer.invalidate() }
+            self.needsDisplay = true
+        }
+        // .common keeps the growth running while the user scrolls the card list.
+        RunLoop.main.add(timer, forMode: .common); growthTimer = timer
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { growthTimer?.invalidate(); growthTimer = nil; growthStart = nil }
+    }
     private var hovered: Int?
     override var acceptsFirstResponder: Bool { true }
     private var tracking: NSTrackingArea?
@@ -25,6 +48,10 @@ final class ChartView: NSView {
         }
         guard !points.isEmpty else { return }
         let step = chart.width / CGFloat(points.count)
+        // Reduce motion: bars keep their height and fade in instead of growing.
+        let reduced = Motion.reduced, progress = growth
+        NSGraphicsContext.saveGraphicsState()
+        if reduced { NSGraphicsContext.current?.cgContext.setAlpha(progress) }
         for (index, point) in points.enumerated() {
             if point.y == 0 {
                 // A muted baseline tick marks an empty bucket, not a visit.
@@ -32,7 +59,7 @@ final class ChartView: NSView {
                 NSBezierPath(roundedRect: NSRect(x: chart.minX + CGFloat(index) * step + 1, y: chart.maxY - 0.75, width: max(1, step - 5), height: 0.75), xRadius: 0.375, yRadius: 0.375).fill()
                 continue
             }
-            let height = max(2, CGFloat(point.y / maxValue) * chart.height)
+            let height = max(2, CGFloat(point.y / maxValue) * chart.height * (reduced ? 1 : progress))
             let colors: [(NSColor, NSColor)] = [
                 (.init(srgbRed: 1, green: 173/255, blue: 120/255, alpha: 1), .init(srgbRed: 230/255, green: 123/255, blue: 50/255, alpha: 1)),
                 (.init(srgbRed: 1, green: 223/255, blue: 197/255, alpha: 1), .init(srgbRed: 1, green: 173/255, blue: 120/255, alpha: 1)),
@@ -42,6 +69,7 @@ final class ChartView: NSView {
             let shape = NSBezierPath(roundedRect: rect, xRadius: 2.5, yRadius: 2.5)
             NSGradient(starting: hovered == index ? .init(srgbRed: 1, green: 223/255, blue: 197/255, alpha: 1) : color.0, ending: color.1)?.draw(in: shape, angle: 90)
         }
+        NSGraphicsContext.restoreGraphicsState()
         if let index = hovered, points.indices.contains(index) {
             let value = "\(points[index].x) · \(Int(points[index].y)) 次会话"
             let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.labelColor]

@@ -30,6 +30,22 @@ func drawSurface(_ bounds: NSRect, radius: CGFloat) {
     NSColor(white: 1, alpha: Ink.dark ? 0.045 : 0.4).setStroke()
     NSBezierPath(roundedRect: bounds.insetBy(dx: 1.7, dy: 1.7), xRadius: radius - 1, yRadius: radius - 1).stroke()
 }
+/// Motion tokens. Entrances use a strong ease-out: cubic-bezier(0.23, 1, 0.32, 1).
+enum Motion {
+    static var easeOutTiming: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1) }
+    /// System "Reduce motion": keep opacity feedback, drop movement.
+    static var reduced: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// The ease-out curve evaluated at linear progress x in 0...1, for timer-driven drawing.
+    static func easeOutProgress(_ x: Double) -> Double { bezier(x, 0.23, 1, 0.32, 1) }
+    /// CSS cubic-bezier timing function: solves for t at time x by bisection, returns the eased value.
+    static func bezier(_ x: Double, _ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) -> Double {
+        if x <= 0 { return 0 }; if x >= 1 { return 1 }
+        func coord(_ t: Double, _ p1: Double, _ p2: Double) -> Double { let u = 1 - t; return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t }
+        var lo = 0.0, hi = 1.0, t = x
+        for _ in 0..<30 { let value = coord(t, x1, x2); if abs(value - x) < 1e-5 { break }; if value < x { lo = t } else { hi = t }; t = (lo + hi) / 2 }
+        return coord(t, y1, y2)
+    }
+}
 /// Shared date formatters: building a DateFormatter on every draw() is expensive.
 enum Formats {
     static let range = make("MM/dd HH:mm"), hour = make("HH:mm"), day = make("MM/dd"), time = make("HH:mm:ss")

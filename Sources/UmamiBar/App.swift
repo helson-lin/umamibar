@@ -131,6 +131,8 @@ final class MainController: NSViewController {
         let material = NSVisualEffectView()
         material.material = .popover; material.blendingMode = .behindWindow; material.state = .active
         panel = NativePanel(); panel.translatesAutoresizingMaskIntoConstraints = false
+        // Layer-backed so screen changes can slide; clip to the 18pt surface so content never slides outside it.
+        panel.wantsLayer = true; panel.layer?.masksToBounds = true; panel.layer?.cornerRadius = 18
         panel.onAction = { [weak self] action, values in self?.handle(action, body: values) }
         material.addSubview(panel)
         NSLayoutConstraint.activate([panel.leadingAnchor.constraint(equalTo: material.leadingAnchor), panel.trailingAnchor.constraint(equalTo: material.trailingAnchor), panel.topAnchor.constraint(equalTo: material.topAnchor), panel.bottomAnchor.constraint(equalTo: material.bottomAnchor)])

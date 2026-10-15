@@ -23,7 +23,8 @@ final class NativePanel: FlippedView {
         if bounds.size != renderedSize, bounds.width > 0, let state = state { render(state) }
     }
     override func cancelOperation(_ sender: Any?) {
-        if state?.screen == "detail" { action("back") } else { super.cancelOperation(sender) }
+        // NSResponder has no cancelOperation(_:) of its own, so calling super would crash; hand Esc up the chain instead.
+        if state?.screen == "detail" { action("back") } else { nextResponder?.tryToPerform(#selector(cancelOperation(_:)), with: sender) }
     }
     private func action(_ name: String, _ values: [String: Any] = [:]) { onAction?(name, values) }
     private func button(_ title: String, _ rect: NSRect, style: PaintedButton.Style = .plain, action: @escaping () -> Void) -> PaintedButton {
@@ -41,6 +42,15 @@ final class NativePanel: FlippedView {
         if previousScreen == "detail", let scroll = detailScroll { detailOffset = scroll.contentView.bounds.origin }
         if next.detailID != previousDetailID { detailOffset = .zero }
         previousDetailID = next.detailID
+        // Pointer-initiated overview <-> detail navigation slides to show hierarchy; keyboard (Return on a chart, Esc) stays instant.
+        let push: CATransitionSubtype? = previousScreen == "overview" && next.screen == "detail" ? .fromRight : previousScreen == "detail" && next.screen == "overview" ? .fromLeft : nil
+        var transitioned = false
+        if let push = push, let type = NSApp.currentEvent?.type, [.leftMouseDown, .leftMouseUp].contains(type), let layer = layer {
+            let transition = CATransition()
+            transition.type = Motion.reduced ? .fade : .push; transition.subtype = push
+            transition.duration = Motion.reduced ? 0.15 : 0.25; transition.timingFunction = Motion.easeOutTiming
+            layer.add(transition, forKey: kCATransition); transitioned = true
+        }
         state = next
         subviews.forEach { if !(reuseOverview && $0 === overviewScroll) && !(reuseDetail && $0 === detailScroll) { $0.removeFromSuperview() } }
         if next.screen == "empty" {
@@ -99,6 +109,8 @@ final class NativePanel: FlippedView {
             _ = button("管理网站", NSRect(x: 272, y: bounds.height - 34, width: 70, height: 26)) { [weak self] in self?.action("manage") }
         }
         previousScreen = next.screen; needsDisplay = true
+        // The header text is drawn in draw(_:), not by subviews; render it now so it slides with its screen.
+        if transitioned { displayIfNeeded() }
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; subviews.forEach { $0.needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) {
