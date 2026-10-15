@@ -171,7 +171,8 @@ final class SiteCard: FlippedView {
     var layoutKey: String { Self.layoutKey(site) }
     init(frame: NSRect, site: PanelSite, index: Int, state: PanelState) {
         self.site = site; self.index = index; self.state = state; super.init(frame: frame)
-        let openButton = PaintedButton("", frame: NSRect(x: 18, y: 12, width: 220, height: 40)) { [weak self] in self?.open?() }; openButton.toolTip = "查看 \(site.website.name) 详情"; openButton.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(openButton)
+        // Hover area wraps the name (x 20, y 17) and domain (ends y 52) with ~10pt padding; the painted fill insets 1pt.
+        let openButton = PaintedButton("", frame: NSRect(x: 9, y: 9, width: 240, height: 48)) { [weak self] in self?.open?() }; openButton.toolTip = "查看 \(site.website.name) 详情"; openButton.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(openButton)
         chart.points = site.points ?? []; chart.colorIndex = site.color; chart.showsScale = false
         chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(chart)
     }
