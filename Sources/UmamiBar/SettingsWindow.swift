@@ -111,10 +111,11 @@ final class SettingsWindowController: NSWindowController {
         case .general:
             // Language names stay in their own language, as in macOS, so anyone can find theirs.
             for (i, code) in Localization.choices.enumerated() {
-                let b = button([L("跟随系统"), "简体中文", "English"][i], NSRect(x: 23 + CGFloat(i) * 132, y: top + 127, width: 131, height: 29), style: .segment) { Localization.set(code) }
+                let b = button([L("跟随系统"), "简体中文", "English"][i], NSRect(x: 23 + CGFloat(i) * 132, y: top + 23, width: 131, height: 29), style: .segment) { Localization.set(code) }
                 b.selected = Localization.choice == code; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
             }
-            _ = button(L("退出 UmamiBar"), NSRect(x: 20, y: top + 196, width: 400, height: 36), style: .destructive) { NSApp.terminate(nil) }
+            // Same height as 保存并查看 on the websites tab, so each tab's main action sits in one place.
+            _ = button(L("退出 UmamiBar"), NSRect(x: 20, y: top + 256, width: 400, height: 36), style: .destructive) { NSApp.terminate(nil) }
         }
         updateState()
     }
@@ -242,14 +243,19 @@ final class SettingsPanel: FlippedView {
             fill(NSRect(x: 20, y: top + 244, width: 400, height: 0.5), Ink.line)
             text(L("点击色点更改图表颜色 · 取消选择不会删除 Umami 中的网站。"), NSRect(x: 20, y: top + 302, width: 400, height: 15), size: 10, color: Ink.secondary, alignment: .center)
         case .general:
+            // Language uses the connection tab's rhythm: label, control at +20, note at +63.
+            text(L("语言"), NSRect(x: 20, y: top, width: 400, height: 16), color: Ink.secondary)
+            fill(NSRect(x: 20, y: top + 20, width: 400, height: 35), NSColor(white: Ink.dark ? 0 : 0.2, alpha: Ink.dark ? 0.3 : 0.07), radius: 9)
+            text(L("立即生效 · “跟随系统”使用 macOS 的语言设置"), NSRect(x: 20, y: top + 63, width: 400, height: 15), size: 10, color: Ink.secondary)
+            fill(NSRect(x: 20, y: top + 98, width: 400, height: 0.5), Ink.line)
+            // About: the header's app chip, name and version, then what the app does and where data lives.
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            text("UmamiBar", NSRect(x: 20, y: top, width: 400, height: 18), size: 13, weight: .semibold)
-            text(version.map { L("版本 %@", $0) } ?? L("开发版本"), NSRect(x: 20, y: top + 21, width: 400, height: 16), color: Ink.secondary)
-            text(L("在菜单栏集中查看多个 Umami 网站的访客与趋势。"), NSRect(x: 20, y: top + 50, width: 400, height: 16))
-            text(L("API Key 保存在 macOS 钥匙串，网站选择与偏好保存在本地。"), NSRect(x: 20, y: top + 70, width: 400, height: 15), size: 10, color: Ink.secondary)
-            text(L("语言"), NSRect(x: 20, y: top + 104, width: 400, height: 16), color: Ink.secondary)
-            fill(NSRect(x: 20, y: top + 124, width: 400, height: 35), NSColor(white: Ink.dark ? 0 : 0.2, alpha: Ink.dark ? 0.3 : 0.07), radius: 9)
-            text(L("立即生效 · “跟随系统”使用 macOS 的语言设置"), NSRect(x: 20, y: top + 167, width: 400, height: 15), size: 10, color: Ink.secondary)
+            fill(NSRect(x: 20, y: top + 116, width: 32, height: 32), NSColor(white: 0.5, alpha: 0.18), radius: 9)
+            for (i, h) in [9.0, 15, 12].enumerated() { fill(NSRect(x: 29 + Double(i) * 5, y: top + 140 - h, width: 2, height: h), Ink.text, radius: 1) }
+            text("UmamiBar", NSRect(x: 62, y: top + 115, width: 358, height: 18), size: 13, weight: .semibold)
+            text(version.map { L("版本 %@", $0) } ?? L("开发版本"), NSRect(x: 62, y: top + 134, width: 358, height: 16), color: Ink.secondary)
+            text(L("在菜单栏集中查看多个 Umami 网站的访客与趋势。"), NSRect(x: 20, y: top + 166, width: 400, height: 16))
+            text(L("API Key 保存在 macOS 钥匙串，网站选择与偏好保存在本地。"), NSRect(x: 20, y: top + 186, width: 400, height: 15), size: 10, color: Ink.secondary)
         }
     }
 }
