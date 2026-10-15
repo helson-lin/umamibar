@@ -17,9 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var item: NSStatusItem!
     private let popover = NSPopover()
     private var controller: MainController!
+    private let settings = SettingsWindowController()
     private var timer: Timer?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = Self.editMenu()
         controller = MainController()
+        controller.onOpenSettings = { [weak self] tab in self?.openSettings(tab) }
+        settings.onSave = { [weak self] connection, sites in try self?.controller.apply(connection, sites: sites) }
         controller.onTotal = { [weak self] total, period in
             self?.item.button?.title = " " + Self.menuCount(total)
             let exact = total.map { String($0) } ?? "正在更新"
@@ -42,6 +46,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             guard let self = self, self.popover.isShown else { return }; self.controller.refreshIfNeeded()
         }
+        if controller.connection == nil { openSettings(.connection) }
+    }
+    private func openSettings(_ tab: SettingsWindowController.Tab) {
+        popover.performClose(nil)
+        settings.show(tab, connection: controller.connection, sites: controller.sites)
+    }
+    /// Accessory apps show no menu bar, but text fields still need the standard
+    /// key equivalents (⌘V to paste an API key, ⌘W to close settings).
+    private static func editMenu() -> NSMenu {
+        let main = NSMenu()
+        let app = NSMenu(); app.addItem(withTitle: "退出 UmamiBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let edit = NSMenu(title: "编辑")
+        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let window = NSMenu(title: "窗口"); window.addItem(withTitle: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        for menu in [app, edit, window] { let item = NSMenuItem(); item.submenu = menu; main.addItem(item) }
+        return main
     }
     private static func menuCount(_ count: Int?) -> String {
         guard let count = count else { return "—" }
@@ -65,15 +91,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 // Pure AppKit panel; all controls and charts are drawn locally.
 final class MainController: NSViewController {
     var onTotal: ((Int?, Period) -> Void)?
+    var onOpenSettings: ((SettingsWindowController.Tab) -> Void)?
     private let api = API()
     private var panel: NativePanel!
-    private var connection: Connection?
-    private var candidate: Connection?
-    private var sites: [Website] = []
-    private var available: [Website] = []
+    private(set) var connection: Connection?
+    private(set) var sites: [Website] = []
     private var period = Period(rawValue: UserDefaults.standard.integer(forKey: "period")) ?? .day
-    private var screen = "setup"
-    private var connecting = false
+    private var screen = "empty"
     private var loading = false
     private var ready = false
     private var generation = UUID()
@@ -83,7 +107,6 @@ final class MainController: NSViewController {
     private var paused = false
     private var cache: [String: (Int, [Point])] = [:]
     private var errors: [String: String] = [:]
-    private var message = ""
     private var statistics: [String: Stats] = [:]
     private var previousVisitors: [String: Int] = [:]
     private var detailID: String?
@@ -94,6 +117,16 @@ final class MainController: NSViewController {
     private var detailToken = UUID()
     private var detailTask: URLSessionDataTask?
 
+    init() {
+        super.init(nibName: nil, bundle: nil)
+        if let address = UserDefaults.standard.string(forKey: "server"), let base = try? Connection.baseURL(address), let key = Keychain.read() {
+            connection = Connection(base: base, key: key)
+            if let data = UserDefaults.standard.data(forKey: "sites"), let saved = try? JSONDecoder().decode([Website].self, from: data) { sites = saved }
+        }
+        screen = sites.isEmpty ? "empty" : "overview"
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+
     override func loadView() {
         let material = NSVisualEffectView()
         material.material = .popover; material.blendingMode = .behindWindow; material.state = .active
@@ -103,17 +136,13 @@ final class MainController: NSViewController {
         NSLayoutConstraint.activate([panel.leadingAnchor.constraint(equalTo: material.leadingAnchor), panel.trailingAnchor.constraint(equalTo: material.trailingAnchor), panel.topAnchor.constraint(equalTo: material.topAnchor), panel.bottomAnchor.constraint(equalTo: material.bottomAnchor)])
         view = material
         preferredContentSize = NSSize(width: 360, height: min(640, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
-        if let address = UserDefaults.standard.string(forKey: "server"), let base = try? Connection.baseURL(address), let key = Keychain.read() {
-            connection = Connection(base: base, key: key)
-            if let data = UserDefaults.standard.data(forKey: "sites"), let saved = try? JSONDecoder().decode([Website].self, from: data) { sites = saved }
-            if !sites.isEmpty { screen = "overview" }
-        }
         ready = true; publish()
     }
     private func handle(_ action: String, body: [String: Any]) {
         switch action {
         case "ready": ready = true; publish(); refreshIfNeeded()
-        case "settings": cancel(); screen = "setup"; publish()
+        case "settings": onOpenSettings?(.connection)
+        case "manage": onOpenSettings?(.websites)
         case "back": if !sites.isEmpty { detailTask?.cancel(); detailToken = UUID(); detailID = nil; screen = "overview"; publish(); refreshIfNeeded() }
         case "detail":
             guard let id = body["id"] as? String, sites.contains(where: { $0.id == id }) else { return }
@@ -125,64 +154,34 @@ final class MainController: NSViewController {
             guard let raw = body["value"] as? Int, let value = Period(rawValue: raw) else { return }
             cancel(); period = value; UserDefaults.standard.set(raw, forKey: "period")
             cache = [:]; statistics = [:]; previousVisitors = [:]; detailRows = nil; errors = [:]; lastUpdate = nil; paused = false; onTotal?(nil, period); refresh()
-        case "connect": connect(address: body["server"] as? String ?? "", key: body["key"] as? String ?? "")
-        case "manage": if let connection = connection { discover(connection) }
-        case "save": save(ids: body["ids"] as? [String] ?? [])
         case "dashboard":
             if let id = body["id"] as? String, let site = sites.first(where: { $0.id == id }), let url = connection?.dashboard(site) { NSWorkspace.shared.open(url) }
         case "quit": NSApp.terminate(nil)
         default: break
         }
     }
-    private func cancel() { detailToken = UUID(); detailTask?.cancel(); detailLoading = false; generation = UUID(); tasks.forEach { $0.cancel() }; tasks = []; loading = false; connecting = false }
-    private func connect(address: String, key: String) {
-        do {
-            let base = try Connection.baseURL(address)
-            let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Reuse saved credentials only for the exact same origin and API path.
-            let effective = key.isEmpty && base == connection?.base ? connection?.key ?? "" : key
-            guard !effective.isEmpty else { throw ServiceError.message("请输入 API Key。") }
-            discover(Connection(base: base, key: effective))
-        } catch { message = error.localizedDescription; publish() }
-    }
-    private func discover(_ proposed: Connection) {
-        cancel(); connecting = true; publish(); let token = generation
-        api.websites(connection: proposed) { [weak self] result in
-            guard let self = self, self.generation == token else { return }
-            self.connecting = false
-            switch result {
-            case .failure(let error): self.message = error.localizedDescription
-            case .success(let sites):
-                if sites.isEmpty { self.message = "暂无可访问的网站，请添加网站后重试。" }
-                else { self.candidate = proposed; self.available = sites; self.screen = "selection" }
-            }
-            self.publish()
-        }
-    }
-    private func save(ids: [String]) {
-        guard let candidate = candidate else { return }
-        let selected = available.filter { ids.contains($0.id) }
-        guard !selected.isEmpty else { message = "请至少选择一个网站。"; publish(); return }
-        do {
-            try Keychain.save(candidate.key)
-            connection = candidate; sites = selected; cache = [:]; statistics = [:]; previousVisitors = [:]; errors = [:]; lastUpdate = nil; paused = false
-            UserDefaults.standard.set(candidate.base.absoluteString, forKey: "server")
-            UserDefaults.standard.set(try JSONEncoder().encode(selected), forKey: "sites")
-            screen = "overview"; publish(); refresh()
-        } catch { message = error.localizedDescription; publish() }
+    private func cancel() { detailToken = UUID(); detailTask?.cancel(); detailLoading = false; generation = UUID(); tasks.forEach { $0.cancel() }; tasks = []; loading = false }
+    /// Persists a connection verified in the settings window and shows its websites.
+    func apply(_ proposed: Connection, sites selected: [Website]) throws {
+        try Keychain.save(proposed.key)
+        UserDefaults.standard.set(proposed.base.absoluteString, forKey: "server")
+        UserDefaults.standard.set(try JSONEncoder().encode(selected), forKey: "sites")
+        cancel(); connection = proposed; sites = selected
+        cache = [:]; statistics = [:]; previousVisitors = [:]; errors = [:]; lastUpdate = nil; paused = false
+        detailID = nil; detailRows = nil; screen = "overview"; onTotal?(nil, period)
+        publish(); refresh()
     }
     private func publish() {
         guard ready else { return }
         let formatter = DateFormatter(); formatter.dateFormat = "HH:mm:ss"
         let updated = lastUpdate.map { errors.isEmpty ? formatter.string(from: $0) + " 已刷新" : "更新失败 · 保留上次数据" } ?? "等待更新"
-        let state = PanelState(screen: screen, server: connection?.base.absoluteString ?? "https://api.umami.is/v1", hasKey: connection != nil, connecting: connecting, loading: loading, period: period, start: period.start(before: end), end: end, updated: updated, message: message, sites: sites.map { site in
+        let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: end), end: end, updated: updated, sites: sites.map { site in
             let data = cache[site.id]
             return PanelSite(website: site, total: statistics[site.id]?.visitors ?? data?.0, points: data?.1, error: errors[site.id], stats: statistics[site.id], previousVisitors: previousVisitors[site.id])
-        }, available: available, selected: sites.map(\.id), detailID: detailID, breakdown: breakdown, rows: detailRows, detailLoading: detailLoading, detailError: detailError)
-        let desiredHeight: CGFloat = screen == "setup" ? (sites.isEmpty ? 374 : 418) : screen == "selection" ? 520 : 640
+        }, detailID: detailID, breakdown: breakdown, rows: detailRows, detailLoading: detailLoading, detailError: detailError)
+        let desiredHeight: CGFloat = screen == "empty" ? 206 : 640
         preferredContentSize = NSSize(width: 360, height: min(desiredHeight, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
         panel.render(state)
-        message = ""
     }
     func refreshIfNeeded() {
         guard ready, ["overview", "detail"].contains(screen), !paused, !loading, lastUpdate.map({ Date().timeIntervalSince($0) >= 60 }) ?? true else { return }

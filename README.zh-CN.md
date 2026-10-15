@@ -104,14 +104,16 @@ open dist/UmamiBar.app
 
 当前产物仅有本地 ad-hoc 签名，未使用 Developer ID 签名或公证；GitHub Actions 可发布 ZIP 安装包；应用内自动更新尚未实现。
 
-重新构建后，应先从设置页退出正在运行的旧版，再打开新应用。替换磁盘文件不会替换已经运行的进程。
+重新构建后，应先退出正在运行的旧版（设置窗口 → 通用），再打开新应用。替换磁盘文件不会替换已经运行的进程。
 
 ## 连接 Umami
 
-1. 点击菜单栏中的 UmamiBar 图标。
-2. 填写服务地址或 API 地址及 API Key。
-3. 点击连接按钮，选择需要关注的网站。
-4. 保存选择，进入网站概览。
+1. 首次启动会自动打开设置窗口（之后可点击浮窗中的齿轮打开）。
+2. 在“连接”中填写服务地址或 API 地址及 API Key，点击“验证并选择网站”。
+3. 在“网站”中选择需要关注的网站。
+4. 点击“保存并查看”，浮窗即显示网站概览。
+
+设置使用独立窗口而非浮窗，切换到浏览器复制 API Key 时窗口不会关闭。
 
 ### 服务地址
 
@@ -130,9 +132,9 @@ open dist/UmamiBar.app
 
 ### 修改连接和网站选择
 
-- 点击齿轮进入连接设置。
+- 点击浮窗中的齿轮，打开设置窗口的“连接”页。
 - API 地址完全相同时，可留空 API Key 字段以复用已保存密钥。
-- 概览底部“管理网站”可重新选择当前连接下的网站。
+- 概览底部“管理网站”打开“网站”页，列出当前连接下的网站。
 - 取消选择不会从 Umami 删除网站。
 - 当前仅支持一个 Umami 实例。
 
@@ -207,16 +209,20 @@ xcrun swiftc -parse-as-library \
   -module-cache-path /tmp/umamibar-module-cache \
   Sources/UmamiBar/Models.swift \
   Sources/UmamiBar/ChartView.swift \
+  Sources/UmamiBar/Components.swift \
   Sources/UmamiBar/NativePanel.swift \
+  Sources/UmamiBar/API.swift \
+  Sources/UmamiBar/SettingsWindow.swift \
   scripts/visual-check.swift \
   -o /tmp/umamibar-native-check
 
 /tmp/umamibar-native-check dark detail
-/tmp/umamibar-native-check light setup
+/tmp/umamibar-native-check light empty
+/tmp/umamibar-native-check dark settings-general
 /tmp/umamibar-native-check dark detail --navigation-tests
 ```
 
-检查工具需要 macOS 图形会话，使用示例数据，输出 `/tmp/native-<appearance>-<screen>.png`。页面支持 `overview`、`detail`、`setup` 和 `selection`。`--navigation-tests` 验证原生事件派发，不是完整的网络端到端测试。
+检查工具需要 macOS 图形会话，使用示例数据，输出 `/tmp/native-<appearance>-<screen>.png`。页面支持 `overview`、`detail`、`empty`、`settings-connection`、`settings-websites` 和 `settings-general`。设置 `UMAMIBAR_MOCK=http://127.0.0.1:PORT`（本地服务需对密钥 `test-key` 响应 `GET /api/websites`）会先走真实的验证 → 网站列表流程；再加 `--save-test` 可检查保存。`--navigation-tests` 验证原生事件派发，不是完整的网络端到端测试。
 
 给应用可执行文件显式传入 `--diagnose-series` 或 `--diagnose-details`，可使用已保存连接进行只读诊断。这些模式会访问钥匙串并请求你的 Umami 服务，只打印计数和状态，不打印密钥、服务地址、网站 ID 或页面路径；时间序列诊断另输出接口时间标签。正常启动不会运行诊断。
 
@@ -225,7 +231,9 @@ xcrun swiftc -parse-as-library \
 ```text
 Sources/UmamiBar/
   App.swift          应用生命周期、菜单栏、状态与请求协调
-  NativePanel.swift  自绘页面、控件、概览和详情
+  Components.swift   共享自绘设计系统：颜色、表面、按钮、输入框
+  NativePanel.swift  浮窗页面：未连接、概览和详情
+  SettingsWindow.swift 设置窗口：连接、网站、通用三个标签页
   ChartView.swift    图表绘制、悬停与键盘交互
   API.swift          HTTP 请求、认证和网站列表分页
   Models.swift       接口模型、时间范围、指标与 URL 规范化

@@ -102,14 +102,16 @@ The native-only build uses the toolchain's default deployment target. Use the de
 
 Builds are ad-hoc signed for local development. They are not Developer ID signed or notarized. GitHub Actions can publish release ZIPs; application self-updating is not implemented.
 
-When rebuilding, quit the running app from its settings page before opening the new bundle. Replacing the file does not replace an already-running process.
+When rebuilding, quit the running app (Settings → 通用) before opening the new bundle. Replacing the file does not replace an already-running process.
 
 ## Connect Umami
 
-1. Open UmamiBar from the menu bar.
-2. Enter your service or API URL and API key.
-3. Click the connection button, then choose the websites to display.
-4. Save your selection to open the overview.
+1. On first launch the settings window opens automatically (later, use the gear button in the popover).
+2. Under 连接, enter your service or API URL and API key, then click 验证并选择网站.
+3. Under 网站, choose the websites to display.
+4. Click 保存并查看; the popover then shows the overview.
+
+Settings live in a regular window rather than the popover, so it stays open while you switch to a browser to copy the API key.
 
 ### Service URLs
 
@@ -128,9 +130,9 @@ The app supports **API keys**, not username/password login. Compatibility with o
 
 ### Change a connection or website selection
 
-- The gear button opens connection settings.
+- The gear button in the popover opens the settings window on the 连接 tab.
 - Leave the API key field empty to reuse the saved key **only when the API base URL is unchanged**.
-- “管理网站” in the overview footer reopens website selection for the current connection.
+- “管理网站” in the overview footer opens the 网站 tab and lists websites for the current connection.
 - Removing a website from the selection does not delete it from Umami.
 - One Umami instance is supported at a time.
 
@@ -205,16 +207,20 @@ xcrun swiftc -parse-as-library \
   -module-cache-path /tmp/umamibar-module-cache \
   Sources/UmamiBar/Models.swift \
   Sources/UmamiBar/ChartView.swift \
+  Sources/UmamiBar/Components.swift \
   Sources/UmamiBar/NativePanel.swift \
+  Sources/UmamiBar/API.swift \
+  Sources/UmamiBar/SettingsWindow.swift \
   scripts/visual-check.swift \
   -o /tmp/umamibar-native-check
 
 /tmp/umamibar-native-check dark detail
-/tmp/umamibar-native-check light setup
+/tmp/umamibar-native-check light empty
+/tmp/umamibar-native-check dark settings-general
 /tmp/umamibar-native-check dark detail --navigation-tests
 ```
 
-The harness requires a graphical macOS session. It writes PNG previews to `/tmp/native-<appearance>-<screen>.png`. Screens include `overview`, `detail`, `setup`, and `selection`. `--navigation-tests` checks native action dispatch; it is not a full end-to-end network test.
+The harness requires a graphical macOS session. It writes PNG previews to `/tmp/native-<appearance>-<screen>.png`. Screens include `overview`, `detail`, `empty`, `settings-connection`, `settings-websites`, and `settings-general`. Setting `UMAMIBAR_MOCK=http://127.0.0.1:PORT` (a local server answering `GET /api/websites` for key `test-key`) drives the real verify → website list flow first; add `--save-test` to also check saving. `--navigation-tests` checks native action dispatch; it is not a full end-to-end network test.
 
 An explicit `--diagnose-series` or `--diagnose-details` argument on the app executable performs read-only checks using the saved connection. These modes can access Keychain and contact your Umami server. They print counts and diagnostic status without printing keys, service URLs, website IDs, or page paths. Series diagnostics also print returned timestamps. They are optional debugging tools, not part of normal startup.
 
@@ -223,7 +229,9 @@ An explicit `--diagnose-series` or `--diagnose-details` argument on the app exec
 ```text
 Sources/UmamiBar/
   App.swift          App lifecycle, menu bar, state and request coordination
-  NativePanel.swift  Self-drawn panels, controls, overview and details
+  Components.swift   Shared painted design system: colors, surface, buttons, inputs
+  NativePanel.swift  Popover screens: empty state, overview and details
+  SettingsWindow.swift Settings window: connection, websites and general tabs
   ChartView.swift    Chart drawing, hover values and keyboard interactions
   API.swift          HTTP requests, authentication and website pagination
   Models.swift       API models, periods, metrics and URL normalization

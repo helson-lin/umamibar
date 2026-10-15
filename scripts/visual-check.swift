@@ -4,12 +4,13 @@ import AppKit
   let app = NSApplication.shared; app.setActivationPolicy(.accessory)
   let appearance = CommandLine.arguments[1]
   let screen = CommandLine.arguments[2]
-  let height: CGFloat = screen == "setup" ? 418 : screen == "selection" ? 520 : 640
+  if screen.hasPrefix("settings") { settingsCheck(appearance: appearance, screen: screen); return }
+  let height: CGFloat = screen == "empty" ? 206 : 640
   let window = NSWindow(contentRect: NSRect(x:0,y:0,width:360,height:height), styleMask:[.borderless],backing:.buffered,defer:false)
   window.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
   let panel = NativePanel(frame: NSRect(x:0,y:0,width:360,height:height));window.contentView=panel;window.orderFront(nil)
   let end = Date(); let sites = [Website(id:"1",name:"我的网站",domain:"example.com"),Website(id:"2",name:"产品文档",domain:"docs.example.com"),Website(id:"3",name:"个人博客",domain:"blog.example.com")]
-  var state = PanelState(screen:screen,server:"https://api.umami.is/v1",hasKey:false,connecting:false,loading:false,period:.day,start:end.addingTimeInterval(-86400),end:end,updated:"刚刚更新",message:"",sites:sites.enumerated().map { i,s in PanelSite(website:s,total:[1,36,12][i],points:(0..<24).map { Point(x:"\($0):00",y:i == 0 ? ($0 == 18 ? 1 : 0) : Double(($0*13)%37)) },error:nil) },available:sites,selected:["1"])
+  var state = PanelState(screen:screen,loading:false,period:.day,start:end.addingTimeInterval(-86400),end:end,updated:"刚刚更新",sites:sites.enumerated().map { i,s in PanelSite(website:s,total:[1,36,12][i],points:(0..<24).map { Point(x:"\($0):00",y:i == 0 ? ($0 == 18 ? 1 : 0) : Double(($0*13)%37)) },error:nil) })
   let fixture = try! JSONDecoder().decode(Stats.self, from: Data(#"{"visitors":36,"pageviews":64,"visits":40,"bounces":14,"totaltime":2808}"#.utf8))
   state.sites = state.sites.enumerated().map { index, site in
    PanelSite(website: site.website, total: site.total, points: site.points, error: nil, stats: fixture, previousVisitors: [0,30,16][index])
@@ -19,10 +20,10 @@ import AppKit
   panel.onAction = { name, _ in actions.append(name) }
   panel.render(state);panel.layoutSubtreeIfNeeded()
   if CommandLine.arguments.contains("--click-tests") {
-   let expected = screen == "setup" ? "退出 UmamiBar" : "刷新数据"
+   let expected = screen == "empty" ? "退出 UmamiBar" : "刷新数据"
    guard let button = panel.subviews.compactMap({ $0 as? PaintedButton }).first(where: { $0.title == expected }) else { fatalError("Missing button") }
    button.performClick(nil)
-   precondition(actions == [screen == "setup" ? "quit" : "refresh"], "Wrong action: \(actions)")
+   precondition(actions == [screen == "empty" ? "quit" : "refresh"], "Wrong action: \(actions)")
    print("Button dispatch passed: \(actions)")
   }
   if CommandLine.arguments.contains("--hover"), let event = NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) {
@@ -46,4 +47,41 @@ import AppKit
   if let bitmap=panel.bitmapImageRepForCachingDisplay(in:panel.bounds) { panel.cacheDisplay(in:panel.bounds,to:bitmap);if let data=bitmap.representation(using:.png,properties:[:]) { try! data.write(to: URL(fileURLWithPath:"/tmp/native-\(appearance)-\(screen).png")) } }
   print("Rendered \(appearance) \(screen): \(panel.subviews.count) native controls; size \(panel.bounds.size)")
  }
+}
+
+/// Renders a settings tab (settings-connection / settings-websites / settings-general).
+/// With UMAMIBAR_MOCK=http://127.0.0.1:PORT it verifies against that server first,
+/// exercising the real connect → website list flow.
+func settingsCheck(appearance: String, screen: String) {
+ let settings = SettingsWindowController(); let window = settings.window!
+ window.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
+ var saved: [String] = []
+ settings.onSave = { _, sites in saved = sites.map(\.id) }
+ settings.show(.connection, connection: nil, sites: [])
+ func controls<T: NSView>(_ type: T.Type, in view: NSView = window.contentView!) -> [T] { view.subviews.flatMap { ($0 as? T).map { [$0] } ?? [] + controls(type, in: $0) } }
+ func tap(_ title: String) { controls(PaintedButton.self).first { $0.title == title }!.performClick(nil) }
+ if let mock = ProcessInfo.processInfo.environment["UMAMIBAR_MOCK"] {
+  let fields = controls(NSTextField.self).filter { $0.isEditable }
+  fields.first { !($0 is NSSecureTextField) }!.stringValue = mock
+  fields.first { $0 is NSSecureTextField }!.stringValue = "test-key"
+  tap("验证并选择网站")
+  let deadline = Date().addingTimeInterval(5)
+  while controls(WebsiteChoice.self).isEmpty && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+  let checks = controls(WebsiteChoice.self)
+  print("Websites listed: \(checks.count)")
+  if CommandLine.arguments.contains("--save-test") {
+   checks.prefix(2).forEach { $0.performClick(nil) }
+   tap("保存并查看")
+   precondition(saved.count == 2 && !window.isVisible, "Save failed: \(saved)")
+   print("Settings save passed: \(saved)")
+   return
+  }
+  if screen == "settings-websites", let first = checks.first { first.performClick(nil) }
+ }
+ tap(["settings-connection": "连接", "settings-websites": "网站", "settings-general": "通用"][screen] ?? "连接")
+ RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+ let frame = window.contentView!.superview!
+ frame.display()
+ if let bitmap = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) { frame.cacheDisplay(in: frame.bounds, to: bitmap); try! bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "/tmp/native-\(appearance)-\(screen).png")) }
+ print("Rendered \(appearance) \(screen): size \(frame.bounds.size)")
 }
