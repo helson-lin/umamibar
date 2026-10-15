@@ -193,12 +193,14 @@ final class MainController: NSViewController {
         loading = true; errors = [:]; end = Date(); let query = period.query(end: end)
         let token = UUID(); generation = token; if screen == "detail" { loadBreakdown() }; publish()
         var queue = sites
+        // Visitors fetched in this round only; failed sites must not contribute stale values to the total.
+        var fresh: [String: Int] = [:]
         func next() {
             guard self.generation == token else { return }
             guard !queue.isEmpty else {
                 self.loading = false; self.tasks = []; self.lastUpdate = self.end
                 self.paused = self.errors.values.contains { $0.contains("API Key") || $0.contains("限流") }
-                self.onTotal?(self.cache.count == self.sites.count ? self.cache.values.reduce(0) { $0 + $1.0 } : nil, self.period)
+                self.onTotal?(fresh.count == self.sites.count ? fresh.values.reduce(0, +) : nil, self.period)
                 self.publish(); return
             }
             let site = queue.removeFirst(); let path = "websites/\(site.id)"
@@ -207,7 +209,7 @@ final class MainController: NSViewController {
                 switch result {
                 case .failure(let error): self.errors[site.id] = error.localizedDescription; self.publish(); next()
                 case .success(let stats):
-                    self.statistics[site.id] = stats
+                    self.statistics[site.id] = stats; fresh[site.id] = stats.visitors
                     let task = self.api.get(Series.self, connection: connection, path: path + "/pageviews", query: query) { result in
                         guard self.generation == token else { return }
                         switch result {

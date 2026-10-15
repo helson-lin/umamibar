@@ -159,6 +159,7 @@ final class NativePanel: FlippedView {
     private var overviewOffset = NSPoint.zero
     private weak var detailScroll: NSScrollView?
     private var detailOffset = NSPoint.zero
+    private weak var choicesScroll: NSScrollView?
     private var previousDetailID: String?
     override func layout() {
         super.layout()
@@ -233,21 +234,27 @@ final class NativePanel: FlippedView {
         } else {
             if !preserveSelection { chosen = Set(next.selected) }
             search.frame = NSRect(x: 22, y: 84, width: 316, height: 30); search.sendsSearchStringImmediately = true; search.target = self; search.action = #selector(filterSites); addSubview(search)
-            _ = button("全选", NSRect(x: 18, y: 122, width: 40, height: 24)) { [weak self] in guard let self = self else { return }; self.chosen = Set(next.available.map(\.id)); self.render(next) }
-            _ = button("取消全选", NSRect(x: 62, y: 122, width: 65, height: 24)) { [weak self] in self?.chosen = []; self?.render(next) }
+            _ = button("全选", NSRect(x: 18, y: 122, width: 40, height: 24)) { [weak self] in guard let self = self else { return }; self.chosen = Set(next.available.map(\.id)); self.fillChoices(next.available) }
+            _ = button("取消全选", NSRect(x: 62, y: 122, width: 65, height: 24)) { [weak self] in self?.chosen = []; self?.fillChoices(next.available) }
             let scroll = NSScrollView(frame: NSRect(x: 22, y: 155, width: 316, height: max(60, bounds.height - 270))); scroll.drawsBackground = false; scroll.hasVerticalScroller = true
-            let document = FlippedView(); var y: CGFloat = 0
-            for site in next.available where search.stringValue.isEmpty || (site.name + site.domain).localizedCaseInsensitiveContains(search.stringValue) {
-                let check = WebsiteChoice(site, frame: NSRect(x: 0, y: y, width: 310, height: 52), target: self, action: #selector(checkSite))
-                check.state = chosen.contains(site.id) ? .on : .off; document.addSubview(check); y += 52
-            }
-            document.frame = NSRect(x: 0, y: 0, width: 316, height: max(y, scroll.bounds.height)); scroll.documentView = document; addSubview(scroll)
+            addSubview(scroll); choicesScroll = scroll; fillChoices(next.available)
             _ = button("保存并查看", NSRect(x: 22, y: bounds.height - 99, width: 316, height: 36), style: .primary) { [weak self] in guard let self = self else { return }; self.action("save", ["ids": Array(self.chosen)]) }
             _ = button("返回连接设置", NSRect(x: 22, y: bounds.height - 52, width: 316, height: 26)) { [weak self] in self?.action("settings") }
         }
         previousScreen = next.screen; needsDisplay = true
     }
-    @objc private func filterSites() { if let state = state { render(state); window?.makeFirstResponder(search) } }
+    // Rebuild only the list: re-rendering the panel would remove the search field mid-edit and reselect its text.
+    @objc private func filterSites() { if let state = state { fillChoices(state.available) } }
+    private func fillChoices(_ available: [Website]) {
+        guard let scroll = choicesScroll else { return }
+        let query = search.stringValue
+        let document = FlippedView(); var y: CGFloat = 0
+        for site in available where query.isEmpty || (site.name + site.domain).localizedCaseInsensitiveContains(query) {
+            let check = WebsiteChoice(site, frame: NSRect(x: 0, y: y, width: 310, height: 52), target: self, action: #selector(checkSite))
+            check.state = chosen.contains(site.id) ? .on : .off; document.addSubview(check); y += 52
+        }
+        document.frame = NSRect(x: 0, y: 0, width: 316, height: max(y, scroll.bounds.height)); scroll.documentView = document
+    }
     @objc private func checkSite(_ sender: NSButton) { guard let id = sender.identifier?.rawValue else { return }; if sender.state == .on { chosen.insert(id) } else { chosen.remove(id) } }
     private func configure(_ field: NSTextField, at y: CGFloat, placeholder: String) {
         field.placeholderString = placeholder
