@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.mainMenu = Self.editMenu()
         controller = MainController()
         controller.onOpenSettings = { [weak self] tab in self?.openSettings(tab) }
-        settings.onSave = { [weak self] connection, sites in try self?.controller.apply(connection, sites: sites) }
+        settings.onSave = { [weak self] connection, sites, colors in try self?.controller.apply(connection, sites: sites, colors: colors) }
         controller.onTotal = { [weak self] total, period in
             self?.item.button?.title = " " + Self.menuCount(total)
             let exact = total.map { String($0) } ?? "正在更新"
@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
     private func openSettings(_ tab: SettingsWindowController.Tab) {
         popover.performClose(nil)
-        settings.show(tab, connection: controller.connection, sites: controller.sites)
+        settings.show(tab, connection: controller.connection, sites: controller.sites, colors: controller.colors)
     }
     /// Accessory apps show no menu bar, but text fields still need the standard
     /// key equivalents (⌘V to paste an API key, ⌘W to close settings).
@@ -96,6 +96,8 @@ final class MainController: NSViewController {
     private var panel: NativePanel!
     private(set) var connection: Connection?
     private(set) var sites: [Website] = []
+    /// Chart palette index per website ID.
+    private(set) var colors: [String: Int] = [:]
     private var period = Period(rawValue: UserDefaults.standard.integer(forKey: "period")) ?? .day
     private var screen = "empty"
     private var loading = false
@@ -123,6 +125,8 @@ final class MainController: NSViewController {
             connection = Connection(base: base, key: key)
             if let data = UserDefaults.standard.data(forKey: "sites"), let saved = try? JSONDecoder().decode([Website].self, from: data) { sites = saved }
         }
+        // Installs from before per-site colors have none saved; fill gives each site a distinct color.
+        colors = SiteColors.fill(sites.map(\.id), saved: UserDefaults.standard.dictionary(forKey: SiteColors.key) as? [String: Int] ?? [:], count: Palette.swatches.count)
         screen = sites.isEmpty ? "empty" : "overview"
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
@@ -164,11 +168,12 @@ final class MainController: NSViewController {
     }
     private func cancel() { detailToken = UUID(); detailTask?.cancel(); detailLoading = false; generation = UUID(); tasks.forEach { $0.cancel() }; tasks = []; loading = false }
     /// Persists a connection verified in the settings window and shows its websites.
-    func apply(_ proposed: Connection, sites selected: [Website]) throws {
+    func apply(_ proposed: Connection, sites selected: [Website], colors chosen: [String: Int]) throws {
         try Keychain.save(proposed.key)
         UserDefaults.standard.set(proposed.base.absoluteString, forKey: "server")
         UserDefaults.standard.set(try JSONEncoder().encode(selected), forKey: "sites")
-        cancel(); connection = proposed; sites = selected
+        UserDefaults.standard.set(chosen, forKey: SiteColors.key)
+        cancel(); connection = proposed; sites = selected; colors = chosen
         cache = [:]; statistics = [:]; previousVisitors = [:]; errors = [:]; lastUpdate = nil; paused = false
         detailID = nil; detailRows = nil; screen = "overview"; onTotal?(nil, period)
         publish(); refresh()
@@ -178,7 +183,7 @@ final class MainController: NSViewController {
         let updated = lastUpdate.map { errors.isEmpty ? Formats.time.string(from: $0) + " 已刷新" : "更新失败 · 保留上次数据" } ?? "等待更新"
         let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: end), end: end, updated: updated, sites: sites.map { site in
             let data = cache[site.id]
-            return PanelSite(website: site, total: statistics[site.id]?.visitors ?? data?.0, points: data?.1, error: errors[site.id], stats: statistics[site.id], previousVisitors: previousVisitors[site.id])
+            return PanelSite(website: site, total: statistics[site.id]?.visitors ?? data?.0, points: data?.1, error: errors[site.id], stats: statistics[site.id], previousVisitors: previousVisitors[site.id], color: colors[site.id] ?? 0)
         }, detailID: detailID, breakdown: breakdown, rows: detailRows, detailLoading: detailLoading, detailError: detailError)
         let desiredHeight: CGFloat = screen == "empty" ? 206 : 640
         preferredContentSize = NSSize(width: 360, height: min(desiredHeight, (NSScreen.main?.visibleFrame.height ?? 760) - 60))

@@ -3,7 +3,8 @@ import AppKit
 final class ChartView: NSView {
     var onClick: (() -> Void)?
     override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self); onClick?() }
-    var colorIndex = 0
+    /// Index into Palette.swatches.
+    var colorIndex = 0 { didSet { if colorIndex != oldValue { needsDisplay = true } } }
     var showsScale = true
     // Bars grow in only when data first arrives into an empty, on-screen chart; refreshes with existing data stay still.
     var points: [Point] = [] { didSet { if oldValue.isEmpty && !points.isEmpty && window != nil { startGrowth() }; rebuildTracking(); needsDisplay = true } }
@@ -60,14 +61,11 @@ final class ChartView: NSView {
                 continue
             }
             let height = max(2, CGFloat(point.y / maxValue) * chart.height * (reduced ? 1 : progress))
-            let colors: [(NSColor, NSColor)] = [
-                (.init(srgbRed: 1, green: 173/255, blue: 120/255, alpha: 1), .init(srgbRed: 230/255, green: 123/255, blue: 50/255, alpha: 1)),
-                (.init(srgbRed: 1, green: 223/255, blue: 197/255, alpha: 1), .init(srgbRed: 1, green: 173/255, blue: 120/255, alpha: 1)),
-                (.init(srgbRed: 230/255, green: 123/255, blue: 50/255, alpha: 1), .init(srgbRed: 172/255, green: 90/255, blue: 35/255, alpha: 1))]
-            let color = colors[min(colorIndex, 2)]
+            let swatch = Palette.swatch(colorIndex)
             let rect = NSRect(x: chart.minX + CGFloat(index) * step + 1, y: chart.maxY - height, width: max(1, step - 5), height: height)
             let shape = NSBezierPath(roundedRect: rect, xRadius: 2.5, yRadius: 2.5)
-            NSGradient(starting: hovered == index ? .init(srgbRed: 1, green: 223/255, blue: 197/255, alpha: 1) : color.0, ending: color.1)?.draw(in: shape, angle: 90)
+            // Hover lightens the bar's own color instead of switching to a fixed tint.
+            NSGradient(starting: hovered == index ? swatch.top.blended(withFraction: 0.45, of: .white) ?? swatch.top : swatch.top, ending: swatch.base)?.draw(in: shape, angle: 90)
         }
         NSGraphicsContext.restoreGraphicsState()
         if let index = hovered, points.indices.contains(index) {

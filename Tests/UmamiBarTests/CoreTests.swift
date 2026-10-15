@@ -85,4 +85,13 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(ServiceError.message("API Key 没有访问权限。").pausesRefresh)
         XCTAssertEqual(ServiceError.blocking("限流").localizedDescription, "限流")
     }
+
+    func testSiteColorsKeepChoicesAndFillGaps() {
+        // New sites get distinct colors in order.
+        XCTAssertEqual(SiteColors.fill(["a", "b", "c"], saved: [:], count: 8), ["a": 0, "b": 1, "c": 2])
+        // Saved choices win; gaps take the first free color; unknown IDs and out-of-range values are dropped.
+        XCTAssertEqual(SiteColors.fill(["a", "b", "c"], saved: ["a": 1, "x": 3, "c": 99], count: 8), ["a": 1, "b": 0, "c": 2])
+        // Once every color is used, colors repeat instead of failing.
+        XCTAssertEqual(SiteColors.next(after: [0, 1], count: 2), 0)
+    }
 }

@@ -87,6 +87,20 @@ struct Connection {
         return base.deletingLastPathComponent().appendingPathComponent("websites").appendingPathComponent(website.id)
     }
 }
+/// Per-site chart colors, stored as palette indexes keyed by website ID.
+enum SiteColors {
+    static let key = "siteColors"
+    /// The first palette index nobody uses yet; once all are taken, colors repeat in order.
+    static func next(after used: [Int], count: Int) -> Int {
+        (0..<count).first { !used.contains($0) } ?? used.count % count
+    }
+    /// Keeps each site's saved color and gives sites without one the next free color, in list order.
+    static func fill(_ ids: [String], saved: [String: Int], count: Int) -> [String: Int] {
+        var result = saved.filter { ids.contains($0.key) && (0..<count).contains($0.value) }
+        for id in ids where result[id] == nil { result[id] = next(after: ids.compactMap { result[$0] }, count: count) }
+        return result
+    }
+}
 enum ServiceError: LocalizedError {
     case message(String)
     /// The key was rejected or rate limited: automatic refresh stops until the user acts.

@@ -8,7 +8,7 @@ final class SettingsWindowController: NSWindowController {
         var title: String { ["连接", "网站", "通用"][rawValue] }
     }
     /// Persists the verified connection and selected websites; throws if the key cannot be stored.
-    var onSave: ((Connection, [Website]) throws -> Void)?
+    var onSave: ((Connection, [Website], [String: Int]) throws -> Void)?
     private let api = API()
     private let panel = SettingsPanel()
     private var tab = Tab.connection
@@ -16,6 +16,8 @@ final class SettingsWindowController: NSWindowController {
     private var candidate: Connection?
     private var available: [Website] = []
     private var chosen: Set<String> = []
+    /// Palette index per website ID; kept for deselected sites so re-selecting restores their color.
+    private var colors: [String: Int] = [:]
     private var generation = UUID()
     private var busy = false
     private var listError: String?
@@ -49,9 +51,9 @@ final class SettingsWindowController: NSWindowController {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
 
-    func show(_ tab: Tab, connection: Connection?, sites: [Website]) {
+    func show(_ tab: Tab, connection: Connection?, sites: [Website], colors: [String: Int]) {
         if window?.isVisible != true {
-            saved = connection; generation = UUID(); busy = false
+            saved = connection; self.colors = colors; generation = UUID(); busy = false
             candidate = nil; available = []; chosen = Set(sites.map(\.id)); listError = nil; search.stringValue = ""
             server.stringValue = connection?.base.absoluteString ?? "https://api.umami.is/v1"
             key.stringValue = ""; key.placeholderString = connection == nil ? "输入 Umami API Key" : "已保存 · 留空保留当前密钥"
@@ -139,7 +141,7 @@ final class SettingsWindowController: NSWindowController {
             case .success(let sites):
                 // Keep the current selection when re-listing the saved server.
                 self.chosen = proposed.base == self.saved?.base ? self.chosen.intersection(sites.map(\.id)) : []
-                self.candidate = proposed; self.available = sites
+                self.candidate = proposed; self.available = sites; self.pinColors()
                 self.connectionStatus = "已连接 · 共 \(sites.count) 个网站"
             }
             if let error = self.listError { self.connectionStatus = error; self.connectionFailed = true }
@@ -149,30 +151,46 @@ final class SettingsWindowController: NSWindowController {
 
     // MARK: Websites
 
-    private func selectAllSites() { chosen.formUnion(available.map(\.id)); reloadList() }
+    private func selectAllSites() { chosen.formUnion(available.map(\.id)); pinColors(); reloadList() }
+    /// Every selected site carries an explicit color, so selecting one site never shifts another's.
+    private func pinColors() {
+        colors.merge(SiteColors.fill(available.map(\.id).filter(chosen.contains), saved: colors, count: Palette.swatches.count)) { $1 }
+    }
+    /// Shows the color dot only on selected rows.
+    private func attachSwatch(to row: WebsiteChoice) {
+        row.subviews.filter { $0 is ColorSwatch }.forEach { $0.removeFromSuperview() }
+        let id = row.website.id
+        guard chosen.contains(id), let color = colors[id] else { return }
+        let swatch = ColorSwatch(color: color, frame: NSRect(x: row.bounds.width - 36, y: 13, width: 26, height: 26))
+        swatch.onPick = { [weak self] in self?.colors[id] = $0 }
+        row.addSubview(swatch)
+    }
     private func selectNoSites() { chosen = []; reloadList() }
     @objc private func toggleSite(_ sender: NSButton) {
         guard let id = sender.identifier?.rawValue else { return }
-        if sender.state == .on { chosen.insert(id) } else { chosen.remove(id) }
+        if sender.state == .on { chosen.insert(id); pinColors() } else { chosen.remove(id) }
+        if let row = sender as? WebsiteChoice { attachSwatch(to: row) }
         updateState()
     }
     /// Replaces only the list so the search field keeps focus while filtering.
     private func reloadList() {
         guard let scroll = list else { return }
         let query = search.stringValue
+        // Keep rows (and their color dots) out of the scroller lane, which overlay scrollers draw over while scrolling.
+        let width = scroll.contentSize.width - NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
         let document = FlippedView(); var y: CGFloat = 0
         for site in available where query.isEmpty || (site.name + site.domain).localizedCaseInsensitiveContains(query) {
-            let check = WebsiteChoice(site, frame: NSRect(x: 0, y: y, width: 400, height: 52), target: self, action: #selector(toggleSite))
-            check.state = chosen.contains(site.id) ? .on : .off; document.addSubview(check); y += 52
+            let check = WebsiteChoice(site, frame: NSRect(x: 0, y: y, width: width, height: 52), target: self, action: #selector(toggleSite))
+            check.state = chosen.contains(site.id) ? .on : .off; attachSwatch(to: check); document.addSubview(check); y += 52
         }
-        document.frame = NSRect(x: 0, y: 0, width: 400, height: max(y, scroll.bounds.height)); scroll.documentView = document
+        document.frame = NSRect(x: 0, y: 0, width: width, height: max(y, scroll.bounds.height)); scroll.documentView = document
         updateState()
     }
     private func saveSelection() {
         guard let candidate = candidate else { return }
         let selected = available.filter { chosen.contains($0.id) }
         do {
-            try onSave?(candidate, selected)
+            try onSave?(candidate, selected, SiteColors.fill(selected.map(\.id), saved: colors, count: Palette.swatches.count))
             saved = candidate; key.stringValue = ""
             window?.close()
         } catch { listError = error.localizedDescription; updateState() }
@@ -205,7 +223,7 @@ final class SettingsPanel: FlippedView {
             text(selectionStatus, NSRect(x: 132, y: top + 52, width: 288, height: 16), size: 10, color: selectionFailed ? .systemOrange : Ink.secondary, alignment: .right)
             fill(NSRect(x: 20, y: top + 80, width: 400, height: 0.5), Ink.line)
             fill(NSRect(x: 20, y: top + 244, width: 400, height: 0.5), Ink.line)
-            text("取消选择只影响本工具，不会删除 Umami 中的网站。", NSRect(x: 20, y: top + 302, width: 400, height: 15), size: 10, color: Ink.secondary, alignment: .center)
+            text("点击色点更改图表颜色 · 取消选择不会删除 Umami 中的网站。", NSRect(x: 20, y: top + 302, width: 400, height: 15), size: 10, color: Ink.secondary, alignment: .center)
         case .general:
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             text("UmamiBar", NSRect(x: 20, y: top, width: 400, height: 18), size: 13, weight: .semibold)

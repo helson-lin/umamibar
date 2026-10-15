@@ -133,6 +133,7 @@ The app supports **API keys**, not username/password login. Compatibility with o
 - The gear button in the popover opens the settings window on the 连接 tab.
 - Leave the API key field empty to reuse the saved key **only when the API base URL is unchanged**.
 - “管理网站” in the overview footer opens the 网站 tab and lists websites for the current connection.
+- Each selected website has a color dot on the 网站 tab; click it to choose that site's chart color from 8 colors. New sites get distinct colors automatically, and colors are saved with 保存并查看.
 - Removing a website from the selection does not delete it from Umami.
 - One Umami instance is supported at a time.
 

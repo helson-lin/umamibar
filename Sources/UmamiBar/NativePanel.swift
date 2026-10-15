@@ -1,6 +1,6 @@
 import AppKit
 
-struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil }
+struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil; var color = 0 }
 struct PanelState {
     var screen: String; var loading: Bool
     var period: Period; var start: Date; var end: Date; var updated: String
@@ -172,10 +172,10 @@ final class SiteCard: FlippedView {
     init(frame: NSRect, site: PanelSite, index: Int, state: PanelState) {
         self.site = site; self.index = index; self.state = state; super.init(frame: frame)
         let openButton = PaintedButton("", frame: NSRect(x: 18, y: 12, width: 220, height: 40)) { [weak self] in self?.open?() }; openButton.toolTip = "查看 \(site.website.name) 详情"; openButton.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(openButton)
-        chart.points = site.points ?? []; chart.colorIndex = index; chart.showsScale = false
+        chart.points = site.points ?? []; chart.colorIndex = site.color; chart.showsScale = false
         chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(chart)
     }
-    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.points = site.points ?? []; needsDisplay = true }
+    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; needsDisplay = true }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
         if index > 0 { fill(NSRect(x: 20, y: 0, width: 320, height: 0.5), Ink.line) }
@@ -202,10 +202,10 @@ final class DetailBody: FlippedView {
     var onRetry: (() -> Void)?
     init(frame: NSRect, site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; super.init(frame: frame)
-        chart.points = site.points ?? []; addSubview(chart); addControls()
+        chart.colorIndex = site.color; chart.points = site.points ?? []; addSubview(chart); addControls()
     }
     func update(site: PanelSite, state: PanelState) {
-        self.site = site; self.state = state; chart.points = site.points ?? []
+        self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []
         subviews.filter { $0 !== chart }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
     }
     private func addControls() {
@@ -238,7 +238,7 @@ final class DetailBody: FlippedView {
             let sum = rows.reduce(0) { $0 + $1.y }
             for (i,row) in rows.prefix(5).enumerated() {
                 let y = CGFloat(371+i*32); let ratio = sum > 0 ? row.y/sum : 0
-                fill(NSRect(x: 20, y: y, width: 320*ratio, height: 29), NSColor.systemOrange.withAlphaComponent(0.07), radius: 4)
+                fill(NSRect(x: 20, y: y, width: 320*ratio, height: 29), Palette.swatch(site.color).base.withAlphaComponent(0.09), radius: 4)
                 text(row.x.flatMap { $0.isEmpty ? nil : $0 } ?? (state.breakdown == "sources" ? "直接访问" : "/"), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
                 text("\(Int(row.y))   \(Int((ratio*100).rounded()))%", NSRect(x: 235, y: y+8, width: 97, height: 15), size: 10, alignment: .right)
             }
