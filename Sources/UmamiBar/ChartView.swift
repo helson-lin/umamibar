@@ -68,8 +68,9 @@ final class ChartView: NSView {
     }
     override func mouseExited(with event: NSEvent) { hovered = nil; needsDisplay = true }
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 36 || event.keyCode == 49 { onClick?(); return }
-        guard !points.isEmpty else { return }
+        // Return/Space open the card; without a handler (detail chart) let the key reach the responder chain.
+        if event.keyCode == 36 || event.keyCode == 49, let onClick = onClick { onClick(); return }
+        guard !points.isEmpty else { super.keyDown(with: event); return }
         if event.keyCode == 123 || event.keyCode == 124 {
             hovered = min(points.count - 1, max(0, (hovered ?? 0) + (event.keyCode == 124 ? 1 : -1)))
             needsDisplay = true

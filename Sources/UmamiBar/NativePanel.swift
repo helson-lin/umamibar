@@ -30,12 +30,19 @@ final class NativePanel: FlippedView {
         let b = PaintedButton(title, frame: rect, style: style, action: action); addSubview(b); return b
     }
     func render(_ next: PanelState) {
+        // Data refreshes keep the scroll view and update cards in place, so hover,
+        // scroll momentum and in-progress clicks survive; only layout changes rebuild.
+        let overviewCards = (overviewScroll?.documentView?.subviews ?? []).compactMap { $0 as? SiteCard }
+        let reuseOverview = next.screen == "overview" && previousScreen == "overview" && overviewScroll != nil
+            && overviewCards.map(\.layoutKey) == next.sites.map(SiteCard.layoutKey)
+        let reuseDetail = next.screen == "detail" && previousScreen == "detail" && next.detailID == previousDetailID && detailScroll?.documentView is DetailBody
         renderedSize = bounds.size
         if previousScreen == "overview", let scroll = overviewScroll { overviewOffset = scroll.contentView.bounds.origin }
         if previousScreen == "detail", let scroll = detailScroll { detailOffset = scroll.contentView.bounds.origin }
         if next.detailID != previousDetailID { detailOffset = .zero }
         previousDetailID = next.detailID
-        state = next; subviews.forEach { $0.removeFromSuperview() }
+        state = next
+        subviews.forEach { if !(reuseOverview && $0 === overviewScroll) && !(reuseDetail && $0 === detailScroll) { $0.removeFromSuperview() } }
         if next.screen == "empty" {
             _ = button("打开设置", NSRect(x: 22, y: 104, width: 316, height: 36), style: .primary) { [weak self] in self?.action("settings") }
             _ = button("退出 UmamiBar", NSRect(x: 22, y: 148, width: 316, height: 36), style: .destructive) { [weak self] in self?.action("quit") }
@@ -46,13 +53,18 @@ final class NativePanel: FlippedView {
             for p in Period.allCases {
                 let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period
             }
-            let scroll = NSScrollView(frame: NSRect(x: 0, y: 145, width: bounds.width, height: max(40, bounds.height - 185)))
-            scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
-            let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 566), site: selected, state: next)
-            body.onBreakdown = { [weak self] value in self?.action("breakdown", ["value": value]) }
-            body.onRetry = { [weak self] in self?.action("detailRetry") }
-            scroll.documentView = body; addSubview(scroll); detailScroll = scroll
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(detailOffset.y, max(0, body.bounds.height-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
+            let frame = NSRect(x: 0, y: 145, width: bounds.width, height: max(40, bounds.height - 185))
+            if reuseDetail, let scroll = detailScroll, let body = scroll.documentView as? DetailBody {
+                scroll.frame = frame; body.update(site: selected, state: next)
+            } else {
+                let scroll = NSScrollView(frame: frame)
+                scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
+                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 566), site: selected, state: next)
+                body.onBreakdown = { [weak self] value in self?.action("breakdown", ["value": value]) }
+                body.onRetry = { [weak self] in self?.action("detailRetry") }
+                scroll.documentView = body; addSubview(scroll); detailScroll = scroll
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: min(detailOffset.y, max(0, body.bounds.height-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
+            }
             _ = button("打开仪表盘 ↗", NSRect(x: 250, y: bounds.height - 34, width: 92, height: 26)) { [weak self] in self?.action("dashboard", ["id": selected.website.id]) }
         } else if next.screen == "overview" {
             let refresh = button("刷新数据", NSRect(x: 264, y: 22, width: 30, height: 30), style: .icon) { [weak self] in self?.action("refresh") }
@@ -67,16 +79,23 @@ final class NativePanel: FlippedView {
             for p in Period.allCases {
                 let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period; b.setAccessibilityValue(b.selected ? "已选中" : "未选中")
             }
-            let scroll = NSScrollView(frame: NSRect(x: 0, y: 135, width: bounds.width, height: max(40, bounds.height - 175)))
-            scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
-            let document = FlippedView(); var y: CGFloat = 0
-            for (i, site) in next.sites.enumerated() {
-                let height: CGFloat = 218 + (site.error == nil ? 0 : 30)
-                let card = SiteCard(frame: NSRect(x: 0, y: y, width: 360, height: height), site: site, index: i, state: next)
-                card.open = { [weak self] in self?.action("detail", ["id": site.website.id]) }; document.addSubview(card); y += height
+            let frame = NSRect(x: 0, y: 135, width: bounds.width, height: max(40, bounds.height - 175))
+            if reuseOverview, let scroll = overviewScroll, let document = scroll.documentView {
+                scroll.frame = frame
+                zip(overviewCards, next.sites).forEach { $0.update(site: $1, state: next) }
+                document.frame.size.height = max(frame.height, overviewCards.last?.frame.maxY ?? 0)
+            } else {
+                let scroll = NSScrollView(frame: frame)
+                scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
+                let document = FlippedView(); var y: CGFloat = 0
+                for (i, site) in next.sites.enumerated() {
+                    let height: CGFloat = 218 + (site.error == nil ? 0 : 30)
+                    let card = SiteCard(frame: NSRect(x: 0, y: y, width: 360, height: height), site: site, index: i, state: next)
+                    card.open = { [weak self] in self?.action("detail", ["id": site.website.id]) }; document.addSubview(card); y += height
+                }
+                document.frame = NSRect(x: 0, y: 0, width: 360, height: max(scroll.bounds.height, y)); scroll.documentView = document; addSubview(scroll); overviewScroll = scroll
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: min(overviewOffset.y, max(0, y-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
             }
-            document.frame = NSRect(x: 0, y: 0, width: 360, height: max(scroll.bounds.height, y)); scroll.documentView = document; addSubview(scroll); overviewScroll = scroll
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(overviewOffset.y, max(0, y-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
             _ = button("管理网站", NSRect(x: 272, y: bounds.height - 34, width: 70, height: 26)) { [weak self] in self?.action("manage") }
         }
         previousScreen = next.screen; needsDisplay = true
@@ -92,8 +111,7 @@ final class NativePanel: FlippedView {
             text(site.website.name, NSRect(x: 60, y: 19, width: 240, height: 18), size: 13, weight: .semibold)
             text(site.website.domain, NSRect(x: 60, y: 40, width: 240, height: 16), size: 10, color: Ink.secondary)
             fill(NSRect(x: 20, y: 76, width: 320, height: 35), NSColor(white: Ink.dark ? 0 : 0.2, alpha: Ink.dark ? 0.3 : 0.07), radius: 9)
-            let formatter = DateFormatter(); formatter.dateFormat = "MM/dd HH:mm"
-            text(formatter.string(from: s.start) + " — " + formatter.string(from: s.end), NSRect(x: 21, y: 123, width: 300, height: 15), size: 10, color: Ink.secondary)
+            text(Formats.range.string(from: s.start) + " — " + Formats.range.string(from: s.end), NSRect(x: 21, y: 123, width: 300, height: 15), size: 10, color: Ink.secondary)
             fill(NSRect(x: 0, y: bounds.height-40, width: 360, height: 0.5), Ink.line)
             text(s.loading ? "正在刷新…" : s.updated, NSRect(x: 20, y: bounds.height-28, width: 225, height: 17), size: 10, color: Ink.secondary)
         } else if s.screen == "overview" {
@@ -105,8 +123,7 @@ final class NativePanel: FlippedView {
             NSColor(white: Ink.dark ? 1 : 0, alpha: Ink.dark ? 0.05 : 0.045).setStroke(); NSBezierPath(roundedRect: toolRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 9, yRadius: 9).stroke()
             fill(NSRect(x: 298, y: 31, width: 1, height: 13), Ink.line)
             fill(NSRect(x: 20, y: 76, width: 320, height: 35), NSColor(white: Ink.dark ? 0 : 0.2, alpha: Ink.dark ? 0.3 : 0.07), radius: 9)
-            let formatter = DateFormatter(); formatter.dateFormat = "MM/dd HH:mm"
-            text(formatter.string(from: s.start) + " — " + formatter.string(from: s.end), NSRect(x: 21, y: 123, width: 235, height: 15), size: 10, color: Ink.secondary)
+            text(Formats.range.string(from: s.start) + " — " + Formats.range.string(from: s.end), NSRect(x: 21, y: 123, width: 235, height: 15), size: 10, color: Ink.secondary)
             text(TimeZone.current.abbreviation() ?? "", NSRect(x: 262, y: 123, width: 76, height: 15), size: 10, color: Ink.secondary, alignment: .right)
             let footerTop = bounds.height - 40
             let shade = NSGradient(starting: NSColor.black.withAlphaComponent(Ink.dark ? 0.11 : 0.035), ending: .clear)
@@ -134,16 +151,19 @@ private func drawStats(_ stats: Stats?, y: CGFloat) {
     }
 }
 final class SiteCard: FlippedView {
-    private let site: PanelSite; private let index: Int; private let state: PanelState
+    private var site: PanelSite; private let index: Int; private var state: PanelState
+    private let chart = ChartView(frame: NSRect(x: 20, y: 74, width: 320, height: 65))
     var open: (() -> Void)?
+    /// Cards can be updated in place only while the website and card height stay the same.
+    static func layoutKey(_ site: PanelSite) -> String { site.website.id + (site.error == nil ? "" : "#error") }
+    var layoutKey: String { Self.layoutKey(site) }
     init(frame: NSRect, site: PanelSite, index: Int, state: PanelState) {
         self.site = site; self.index = index; self.state = state; super.init(frame: frame)
         let openButton = PaintedButton("", frame: NSRect(x: 18, y: 12, width: 220, height: 40)) { [weak self] in self?.open?() }; openButton.toolTip = "查看 \(site.website.name) 详情"; openButton.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(openButton)
-        do {
-            let chart = ChartView(frame: NSRect(x: 20, y: 74, width: 320, height: 65)); chart.points = site.points ?? []; chart.colorIndex = index; chart.showsScale = false
-            chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(chart)
-        }
+        chart.points = site.points ?? []; chart.colorIndex = index; chart.showsScale = false
+        chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(chart)
     }
+    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.points = site.points ?? []; needsDisplay = true }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
         if index > 0 { fill(NSRect(x: 20, y: 0, width: 320, height: 0.5), Ink.line) }
@@ -156,7 +176,7 @@ final class SiteCard: FlippedView {
         drawGrowth(site, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
         do {
             if site.points == nil { text(state.loading ? "正在加载…" : "趋势暂无数据", NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
-            let formatter = DateFormatter(); formatter.dateFormat = state.period == .day ? "HH:mm" : "MM/dd"
+            let formatter = Formats.axis(state.period)
             for (i,date) in [state.start, Date(timeIntervalSince1970: (state.start.timeIntervalSince1970+state.end.timeIntervalSince1970)/2),state.end].enumerated() { text(formatter.string(from: date), NSRect(x: 20+CGFloat(i)*106, y: 145, width: 106, height: 14), size: 9, color: Ink.secondary, alignment: i == 0 ? .left : i == 2 ? .right : .center) }
         }
         drawStats(site.stats, y: 171)
@@ -164,12 +184,19 @@ final class SiteCard: FlippedView {
     }
 }
 final class DetailBody: FlippedView {
-    let site: PanelSite; let state: PanelState
+    private(set) var site: PanelSite; private(set) var state: PanelState
+    private let chart = ChartView(frame: NSRect(x: 20, y: 181, width: 320, height: 90))
     var onBreakdown: ((String) -> Void)?
     var onRetry: (() -> Void)?
     init(frame: NSRect, site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; super.init(frame: frame)
-        let chart = ChartView(frame: NSRect(x: 20, y: 181, width: 320, height: 90)); chart.points = site.points ?? []; addSubview(chart)
+        chart.points = site.points ?? []; addSubview(chart); addControls()
+    }
+    func update(site: PanelSite, state: PanelState) {
+        self.site = site; self.state = state; chart.points = site.points ?? []
+        subviews.filter { $0 !== chart }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
+    }
+    private func addControls() {
         for (i, value) in ["pages", "sources"].enumerated() {
             let b = PaintedButton(i == 0 ? "热门页面" : "流量来源", frame: NSRect(x: 16+CGFloat(i)*88, y: 301, width: 80, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
         }
@@ -187,7 +214,7 @@ final class DetailBody: FlippedView {
         text("会话趋势", NSRect(x: 20, y: 161, width: 160, height: 17), weight: .semibold)
         text(state.period == .day ? "每小时" : "每天", NSRect(x: 265, y: 161, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
         if site.points == nil { text("趋势暂无数据", NSRect(x: 90, y: 214, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
-        let formatter = DateFormatter(); formatter.dateFormat = state.period == .day ? "HH:mm" : "MM/dd"
+        let formatter = Formats.axis(state.period)
         text(formatter.string(from: state.start), NSRect(x: 20, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary)
         text(formatter.string(from: state.end), NSRect(x: 240, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary, alignment: .right)
         fill(NSRect(x: 20, y: 335, width: 320, height: 0.5), Ink.line)

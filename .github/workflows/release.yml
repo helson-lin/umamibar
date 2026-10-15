@@ -61,6 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     steps:
@@ -78,10 +79,17 @@ jobs:
           cp /tmp/umamibar-cask/umamibar.rb Casks/umamibar.rb
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git checkout -b "automation/homebrew-$TAG"
+          BRANCH="automation/homebrew-$TAG"
+          git checkout -B "$BRANCH"
           git add Casks/umamibar.rb
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore(homebrew): update UmamiBar to $TAG"
-          git push origin "automation/homebrew-$TAG"
+          # Re-runs regenerate the same automation branch instead of failing on push.
+          git push --force origin "$BRANCH"
           printf 'Updates the Homebrew Cask to the published release and its exact SHA-256. Merge to make the version available through the tap.\n' > /tmp/cask-pr.md
-          gh pr create --title "chore(homebrew): update to $TAG" --body-file /tmp/cask-pr.md --head "automation/homebrew-$TAG"
+          if ! gh pr view "$BRANCH" --json state --jq '.state' 2>/dev/null | grep -qx OPEN; then
+            gh pr create --title "chore(homebrew): update to $TAG" --body-file /tmp/cask-pr.md --head "$BRANCH"
+          fi
+          # Pull requests opened with GITHUB_TOKEN do not trigger workflows; dispatch CI
+          # explicitly so the PR head commit gets checks.
+          gh workflow run ci.yml --ref "$BRANCH"

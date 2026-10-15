@@ -89,5 +89,8 @@ struct Connection {
 }
 enum ServiceError: LocalizedError {
     case message(String)
-    var errorDescription: String? { switch self { case .message(let text): return text } }
+    /// The key was rejected or rate limited: automatic refresh stops until the user acts.
+    case blocking(String)
+    var errorDescription: String? { switch self { case .message(let text), .blocking(let text): return text } }
+    var pausesRefresh: Bool { if case .blocking = self { return true }; return false }
 }

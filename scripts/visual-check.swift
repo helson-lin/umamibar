@@ -33,7 +33,16 @@ import AppKit
    state.screen = "overview"; panel.render(state)
    let scroll = panel.subviews.compactMap { $0 as? NSScrollView }.first!
    let card = scroll.documentView!.subviews.compactMap { $0 as? SiteCard }[1]
-   card.subviews.compactMap { $0 as? PaintedButton }.first!.performClick(nil)
+   // A data-only refresh must update the same views in place; an error row changes layout and rebuilds.
+   state.loading = true; panel.render(state)
+   precondition(panel.subviews.compactMap { $0 as? NSScrollView }.first === scroll && scroll.documentView!.subviews.compactMap { $0 as? SiteCard }[1] === card, "Overview rebuilt on data refresh")
+   var failed = state; failed.sites[0] = PanelSite(website: failed.sites[0].website, total: nil, points: nil, error: "x"); panel.render(failed)
+   precondition(panel.subviews.compactMap { $0 as? NSScrollView }.first !== scroll, "Layout change did not rebuild")
+   state.loading = false; panel.render(state)
+   let rebuilt = panel.subviews.compactMap { $0 as? NSScrollView }.first!
+   let card2 = rebuilt.documentView!.subviews.compactMap { $0 as? SiteCard }[1]
+   print("In-place overview update passed")
+   card2.subviews.compactMap { $0 as? PaintedButton }.first!.performClick(nil)
    precondition(actions == ["detail"])
    actions = []; state.screen = "detail"; state.detailID = "2"; panel.render(state)
    let detailScroll = panel.subviews.compactMap { $0 as? NSScrollView }.first!

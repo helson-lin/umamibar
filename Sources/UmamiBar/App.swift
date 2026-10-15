@@ -173,8 +173,7 @@ final class MainController: NSViewController {
     }
     private func publish() {
         guard ready else { return }
-        let formatter = DateFormatter(); formatter.dateFormat = "HH:mm:ss"
-        let updated = lastUpdate.map { errors.isEmpty ? formatter.string(from: $0) + " 已刷新" : "更新失败 · 保留上次数据" } ?? "等待更新"
+        let updated = lastUpdate.map { errors.isEmpty ? Formats.time.string(from: $0) + " 已刷新" : "更新失败 · 保留上次数据" } ?? "等待更新"
         let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: end), end: end, updated: updated, sites: sites.map { site in
             let data = cache[site.id]
             return PanelSite(website: site, total: statistics[site.id]?.visitors ?? data?.0, points: data?.1, error: errors[site.id], stats: statistics[site.id], previousVisitors: previousVisitors[site.id])
@@ -194,11 +193,16 @@ final class MainController: NSViewController {
         var queue = sites
         // Visitors fetched in this round only; failed sites must not contribute stale values to the total.
         var fresh: [String: Int] = [:]
+        var blocked = false
+        func record(_ error: Error, for site: Website) {
+            errors[site.id] = error.localizedDescription
+            if (error as? ServiceError)?.pausesRefresh == true { blocked = true }
+        }
         func next() {
             guard self.generation == token else { return }
             guard !queue.isEmpty else {
                 self.loading = false; self.tasks = []; self.lastUpdate = self.end
-                self.paused = self.errors.values.contains { $0.contains("API Key") || $0.contains("限流") }
+                self.paused = blocked
                 self.onTotal?(fresh.count == self.sites.count ? fresh.values.reduce(0, +) : nil, self.period)
                 self.publish(); return
             }
@@ -206,7 +210,7 @@ final class MainController: NSViewController {
             let task = self.api.get(Stats.self, connection: connection, path: path + "/stats", query: query) { result in
                 guard self.generation == token else { return }
                 switch result {
-                case .failure(let error): self.errors[site.id] = error.localizedDescription; self.publish(); next()
+                case .failure(let error): record(error, for: site); self.publish(); next()
                 case .success(let stats):
                     self.statistics[site.id] = stats; fresh[site.id] = stats.visitors
                     let task = self.api.get(Series.self, connection: connection, path: path + "/pageviews", query: query) { result in
@@ -217,7 +221,7 @@ final class MainController: NSViewController {
                                 let points = try TimeBuckets.expand(series.sessions, period: self.period, end: self.end, wallClockLabels: true)
                                 self.cache[site.id] = (stats.visitors, points)
                             } catch { self.errors[site.id] = error.localizedDescription }
-                        case .failure(let error): self.errors[site.id] = error.localizedDescription
+                        case .failure(let error): record(error, for: site)
                         }
                         self.publish()
                         let start = self.period.start(before: self.end)

@@ -79,4 +79,10 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(rows[0].x)
         XCTAssertEqual(rows[1].y, 5)
     }
+
+    func testOnlyBlockingErrorsPauseRefresh() {
+        XCTAssertTrue(ServiceError.blocking("API Key 无效").pausesRefresh)
+        XCTAssertFalse(ServiceError.message("API Key 没有访问权限。").pausesRefresh)
+        XCTAssertEqual(ServiceError.blocking("限流").localizedDescription, "限流")
+    }
 }

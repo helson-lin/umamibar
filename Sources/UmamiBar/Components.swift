@@ -30,6 +30,14 @@ func drawSurface(_ bounds: NSRect, radius: CGFloat) {
     NSColor(white: 1, alpha: Ink.dark ? 0.045 : 0.4).setStroke()
     NSBezierPath(roundedRect: bounds.insetBy(dx: 1.7, dy: 1.7), xRadius: radius - 1, yRadius: radius - 1).stroke()
 }
+/// Shared date formatters: building a DateFormatter on every draw() is expensive.
+enum Formats {
+    static let range = make("MM/dd HH:mm"), hour = make("HH:mm"), day = make("MM/dd"), time = make("HH:mm:ss")
+    static func axis(_ period: Period) -> DateFormatter { period == .day ? hour : day }
+    private static func make(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter(); formatter.dateFormat = format; formatter.timeZone = .autoupdatingCurrent; return formatter
+    }
+}
 class FlippedView: NSView { override var isFlipped: Bool { true }; override var allowsVibrancy: Bool { false } }
 final class PaintedButton: NSButton {
     enum Style { case plain, primary, segment, icon, secondary, destructive, navigation }

@@ -8,6 +8,8 @@ BUILD_NUMBER="${BUILD_NUMBER:-1}"
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then echo "Invalid VERSION or BUILD_NUMBER" >&2; exit 1; fi
 ROOT="$PWD"
 BUILD="${TMPDIR:-/tmp}/umamibar-release"
+# Start from an empty bundle so files from earlier builds never ship.
+rm -rf "$ROOT/dist/UmamiBar.app"
 mkdir -p "$ROOT/dist/UmamiBar.app/Contents/MacOS" "$BUILD"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 SOURCES=(Sources/UmamiBar/*.swift)
@@ -38,7 +40,6 @@ PLIST
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$ROOT/dist/UmamiBar.app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$ROOT/dist/UmamiBar.app/Contents/Info.plist"
 mkdir -p "$ROOT/dist/UmamiBar.app/Contents/Resources"
-find "$ROOT/dist/UmamiBar.app/Contents/Resources" -type f \( -name "panel.html" -o -name "panel.js" \) -delete
 cp assets/AppIcon.icns "$ROOT/dist/UmamiBar.app/Contents/Resources/AppIcon.icns"
 codesign --force --deep --sign - "$ROOT/dist/UmamiBar.app"
 echo "Built: $ROOT/dist/UmamiBar.app"
