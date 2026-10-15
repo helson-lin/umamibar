@@ -69,7 +69,7 @@ final class ChartView: NSView {
         }
         NSGraphicsContext.restoreGraphicsState()
         if let index = hovered, points.indices.contains(index) {
-            let value = "\(points[index].x) · \(Int(points[index].y)) 次会话"
+            let value = L("%@ · %ld 次会话", points[index].x, Int(points[index].y))
             let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.labelColor]
             let width = min(bounds.width - 4, (value as NSString).size(withAttributes: attributes).width + 16)
             let x = min(bounds.width - width - 2, max(2, chart.minX + CGFloat(index) * step - width/2))

@@ -5,7 +5,7 @@ import AppKit
 final class SettingsWindowController: NSWindowController {
     enum Tab: Int, CaseIterable {
         case connection, websites, general
-        var title: String { ["连接", "网站", "通用"][rawValue] }
+        var title: String { [L("连接"), L("网站"), L("通用")][rawValue] }
     }
     /// Persists the verified connection and selected websites; throws if the key cannot be stored.
     var onSave: ((Connection, [Website], [String: Int]) throws -> Void)?
@@ -36,16 +36,16 @@ final class SettingsWindowController: NSWindowController {
 
     init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: SettingsPanel.width, height: SettingsPanel.height), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
-        window.title = "UmamiBar 设置"; window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
+        window.title = L("UmamiBar 设置"); window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true; window.isReleasedWhenClosed = false
         super.init(window: window)
         let material = NSVisualEffectView()
         material.material = .popover; material.blendingMode = .behindWindow; material.state = .active
         window.contentView = material
         panel.frame = material.bounds; panel.autoresizingMask = [.width, .height]; material.addSubview(panel)
-        server.placeholderString = "https://api.umami.is/v1"; server.setAccessibilityLabel("Umami 服务地址")
+        server.placeholderString = "https://api.umami.is/v1"; server.setAccessibilityLabel(L("Umami 服务地址"))
         key.setAccessibilityLabel("API Key"); server.nextKeyView = key; key.nextKeyView = server
-        search.placeholderString = "按名称或域名搜索"; search.setAccessibilityLabel("搜索网站")
+        search.placeholderString = L("按名称或域名搜索"); search.setAccessibilityLabel(L("搜索网站"))
         searchInput.onChange = { [weak self] in self?.reloadList() }
         render()
     }
@@ -56,7 +56,7 @@ final class SettingsWindowController: NSWindowController {
             saved = connection; self.colors = colors; generation = UUID(); busy = false
             candidate = nil; available = []; chosen = Set(sites.map(\.id)); listError = nil; search.stringValue = ""
             server.stringValue = connection?.base.absoluteString ?? "https://api.umami.is/v1"
-            key.stringValue = ""; key.placeholderString = connection == nil ? "输入 Umami API Key" : "已保存 · 留空保留当前密钥"
+            key.stringValue = ""; key.placeholderString = connection == nil ? L("输入 Umami API Key") : L("已保存 · 留空保留当前密钥")
             connectionStatus = ""; connectionFailed = false
             window?.center()
         }
@@ -81,35 +81,38 @@ final class SettingsWindowController: NSWindowController {
         panel.tab = tab
         for item in Tab.allCases {
             let b = button(item.title, NSRect(x: 23 + CGFloat(item.rawValue) * 132, y: 95, width: 131, height: 29), style: .segment) { [weak self] in self?.select(item) }
-            b.selected = item == tab; b.setAccessibilityValue(b.selected ? "已选中" : "未选中")
+            b.selected = item == tab; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
         }
         let top = SettingsPanel.top
         switch tab {
         case .connection:
             panel.addSubview(serverInput); panel.addSubview(keyInput)
-            verify = button("验证并选择网站", NSRect(x: 20, y: top + 185, width: 400, height: 36), style: .primary) { [weak self] in self?.verifyConnection() }
+            verify = button(L("验证并选择网站"), NSRect(x: 20, y: top + 185, width: 400, height: 36), style: .primary) { [weak self] in self?.verifyConnection() }
             verify?.keyEquivalent = "\r"
         case .websites:
             panel.addSubview(searchInput)
-            _ = button("全选", NSRect(x: 16, y: top + 48, width: 40, height: 24)) { [weak self] in self?.selectAllSites() }
-            _ = button("取消全选", NSRect(x: 60, y: top + 48, width: 65, height: 24)) { [weak self] in self?.selectNoSites() }
+            // Size to the localized titles ("全选" vs "Select All").
+            func fit(_ title: String) -> CGFloat { ceil((title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width) + 16 }
+            let all = button(L("全选"), NSRect(x: 16, y: top + 48, width: fit(L("全选")), height: 24)) { [weak self] in self?.selectAllSites() }
+            let none = button(L("取消全选"), NSRect(x: all.frame.maxX + 4, y: top + 48, width: fit(L("取消全选")), height: 24)) { [weak self] in self?.selectNoSites() }
+            panel.selectionStatusMinX = none.frame.maxX + 8
             let scroll = NSScrollView(frame: NSRect(x: 20, y: top + 80, width: 400, height: 164))
             scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
             panel.addSubview(scroll); list = scroll
-            save = button("保存并查看", NSRect(x: 20, y: top + 256, width: 400, height: 36), style: .primary) { [weak self] in self?.saveSelection() }
+            save = button(L("保存并查看"), NSRect(x: 20, y: top + 256, width: 400, height: 36), style: .primary) { [weak self] in self?.saveSelection() }
             reloadList()
         case .general:
-            _ = button("退出 UmamiBar", NSRect(x: 20, y: top + 104, width: 400, height: 36), style: .destructive) { NSApp.terminate(nil) }
+            _ = button(L("退出 UmamiBar"), NSRect(x: 20, y: top + 104, width: 400, height: 36), style: .destructive) { NSApp.terminate(nil) }
         }
         updateState()
     }
     private func updateState() {
-        verify?.title = busy ? "正在验证连接…" : "验证并选择网站"; verify?.isEnabled = !busy
+        verify?.title = busy ? L("正在验证连接…") : L("验证并选择网站"); verify?.isEnabled = !busy
         let count = available.filter { chosen.contains($0.id) }.count
         save?.isEnabled = candidate != nil && count > 0 && !busy
         panel.connectionStatus = connectionStatus; panel.connectionFailed = connectionFailed
         panel.selectionFailed = listError != nil
-        panel.selectionStatus = busy ? "正在加载网站…" : listError ?? (available.isEmpty ? "请先在“连接”中验证服务地址和 API Key。" : "已选 \(count) / \(available.count) 个网站")
+        panel.selectionStatus = busy ? L("正在加载网站…") : listError ?? (available.isEmpty ? L("请先在“连接”中验证服务地址和 API Key。") : L("已选 %ld / %ld 个网站", count, available.count))
         panel.needsDisplay = true; verify?.needsDisplay = true; save?.needsDisplay = true
     }
 
@@ -121,7 +124,7 @@ final class SettingsWindowController: NSWindowController {
             let typed = key.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             // Reuse the saved key only for the exact same origin and API path.
             let effective = typed.isEmpty && base == saved?.base ? saved?.key ?? "" : typed
-            guard !effective.isEmpty else { throw ServiceError.message("请输入 API Key。") }
+            guard !effective.isEmpty else { throw ServiceError.message(L("请输入 API Key。")) }
             discover(Connection(base: base, key: effective), thenShowWebsites: true)
         } catch { connectionStatus = error.localizedDescription; connectionFailed = true; updateState() }
     }
@@ -131,18 +134,18 @@ final class SettingsWindowController: NSWindowController {
     }
     private func discover(_ proposed: Connection, thenShowWebsites: Bool) {
         let token = UUID(); generation = token; listError = nil; busy = true
-        connectionStatus = "正在验证连接…"; connectionFailed = false; updateState()
+        connectionStatus = L("正在验证连接…"); connectionFailed = false; updateState()
         api.websites(connection: proposed) { [weak self] result in
             guard let self = self, self.generation == token else { return }
             self.busy = false
             switch result {
             case .failure(let error): self.listError = error.localizedDescription
-            case .success(let sites) where sites.isEmpty: self.listError = "暂无可访问的网站，请添加网站后重试。"
+            case .success(let sites) where sites.isEmpty: self.listError = L("暂无可访问的网站，请添加网站后重试。")
             case .success(let sites):
                 // Keep the current selection when re-listing the saved server.
                 self.chosen = proposed.base == self.saved?.base ? self.chosen.intersection(sites.map(\.id)) : []
                 self.candidate = proposed; self.available = sites; self.pinColors()
-                self.connectionStatus = "已连接 · 共 \(sites.count) 个网站"
+                self.connectionStatus = L("已连接 · 共 %ld 个网站", sites.count)
             }
             if let error = self.listError { self.connectionStatus = error; self.connectionFailed = true }
             if thenShowWebsites && self.listError == nil { self.select(.websites) } else if self.tab == .websites { self.reloadList() } else { self.updateState() }
@@ -203,33 +206,35 @@ final class SettingsPanel: FlippedView {
     var tab = SettingsWindowController.Tab.connection
     var connectionStatus = "", connectionFailed = false
     var selectionStatus = "", selectionFailed = false
+    /// Left edge for the right-aligned selection count, just past the select/deselect buttons.
+    var selectionStatusMinX: CGFloat = 132
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; subviews.forEach { $0.needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) {
         drawSurface(bounds, radius: 0)
         fill(NSRect(x: 20, y: 40, width: 32, height: 32), NSColor(white: 0.5, alpha: 0.18), radius: 9)
         for (i, h) in [9.0, 15, 12].enumerated() { fill(NSRect(x: 29 + Double(i) * 5, y: 64 - h, width: 2, height: h), Ink.text, radius: 1) }
-        text("UmamiBar 设置", NSRect(x: 62, y: 39, width: 300, height: 18), size: 13, weight: .semibold)
-        text("连接、关注的网站与通用选项", NSRect(x: 62, y: 60, width: 300, height: 16), color: Ink.secondary)
+        text(L("UmamiBar 设置"), NSRect(x: 62, y: 39, width: 300, height: 18), size: 13, weight: .semibold)
+        text(L("连接、关注的网站与通用选项"), NSRect(x: 62, y: 60, width: 300, height: 16), color: Ink.secondary)
         fill(NSRect(x: 20, y: 92, width: 400, height: 35), NSColor(white: Ink.dark ? 0 : 0.2, alpha: Ink.dark ? 0.3 : 0.07), radius: 9)
         let top = Self.top
         switch tab {
         case .connection:
-            text("服务地址", NSRect(x: 20, y: top, width: 400, height: 16), color: Ink.secondary)
-            text("Umami Cloud 使用 https://api.umami.is/v1；自托管填写站点地址，默认补全 /api。", NSRect(x: 20, y: top + 63, width: 400, height: 15), size: 10, color: Ink.secondary)
+            text(L("服务地址"), NSRect(x: 20, y: top, width: 400, height: 16), color: Ink.secondary)
+            text(L("Umami Cloud 使用 https://api.umami.is/v1；自托管填写站点地址，默认补全 /api。"), NSRect(x: 20, y: top + 63, width: 400, height: 15), size: 10, color: Ink.secondary)
             text("API Key", NSRect(x: 20, y: top + 90, width: 400, height: 16), color: Ink.secondary)
-            text("密钥仅保存在 macOS 钥匙串。", NSRect(x: 20, y: top + 153, width: 400, height: 15), size: 10, color: Ink.secondary)
+            text(L("密钥仅保存在 macOS 钥匙串。"), NSRect(x: 20, y: top + 153, width: 400, height: 15), size: 10, color: Ink.secondary)
             text(connectionStatus, NSRect(x: 20, y: top + 233, width: 400, height: 16), color: connectionFailed ? .systemOrange : Ink.secondary, alignment: .center)
         case .websites:
-            text(selectionStatus, NSRect(x: 132, y: top + 52, width: 288, height: 16), size: 10, color: selectionFailed ? .systemOrange : Ink.secondary, alignment: .right)
+            text(selectionStatus, NSRect(x: selectionStatusMinX, y: top + 52, width: 420 - selectionStatusMinX, height: 16), size: 10, color: selectionFailed ? .systemOrange : Ink.secondary, alignment: .right)
             fill(NSRect(x: 20, y: top + 80, width: 400, height: 0.5), Ink.line)
             fill(NSRect(x: 20, y: top + 244, width: 400, height: 0.5), Ink.line)
-            text("点击色点更改图表颜色 · 取消选择不会删除 Umami 中的网站。", NSRect(x: 20, y: top + 302, width: 400, height: 15), size: 10, color: Ink.secondary, alignment: .center)
+            text(L("点击色点更改图表颜色 · 取消选择不会删除 Umami 中的网站。"), NSRect(x: 20, y: top + 302, width: 400, height: 15), size: 10, color: Ink.secondary, alignment: .center)
         case .general:
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             text("UmamiBar", NSRect(x: 20, y: top, width: 400, height: 18), size: 13, weight: .semibold)
-            text(version.map { "版本 " + $0 } ?? "开发版本", NSRect(x: 20, y: top + 21, width: 400, height: 16), color: Ink.secondary)
-            text("在菜单栏集中查看多个 Umami 网站的访客与趋势。", NSRect(x: 20, y: top + 50, width: 400, height: 16))
-            text("API Key 保存在 macOS 钥匙串，网站选择与偏好保存在本地。", NSRect(x: 20, y: top + 70, width: 400, height: 15), size: 10, color: Ink.secondary)
+            text(version.map { L("版本 %@", $0) } ?? L("开发版本"), NSRect(x: 20, y: top + 21, width: 400, height: 16), color: Ink.secondary)
+            text(L("在菜单栏集中查看多个 Umami 网站的访客与趋势。"), NSRect(x: 20, y: top + 50, width: 400, height: 16))
+            text(L("API Key 保存在 macOS 钥匙串，网站选择与偏好保存在本地。"), NSRect(x: 20, y: top + 70, width: 400, height: 15), size: 10, color: Ink.secondary)
         }
     }
 }

@@ -26,8 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         settings.onSave = { [weak self] connection, sites, colors in try self?.controller.apply(connection, sites: sites, colors: colors) }
         controller.onTotal = { [weak self] total, period in
             self?.item.button?.title = " " + Self.menuCount(total)
-            let exact = total.map { String($0) } ?? "正在更新"
-            self?.item.button?.toolTip = "Umami · \(period.title) · \(exact) · 已选网站访客合计（跨站未去重）"
+            let exact = total.map { String($0) } ?? L("正在更新")
+            self?.item.button?.toolTip = L("Umami · %@ · %@ · 已选网站访客合计（跨站未去重）", period.title, exact)
         }
         item = NSStatusBar.system.statusItem(withLength: 80)
         let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in
@@ -56,16 +56,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// key equivalents (⌘V to paste an API key, ⌘W to close settings).
     private static func editMenu() -> NSMenu {
         let main = NSMenu()
-        let app = NSMenu(); app.addItem(withTitle: "退出 UmamiBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        let edit = NSMenu(title: "编辑")
-        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        let app = NSMenu(); app.addItem(withTitle: L("退出 UmamiBar"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let edit = NSMenu(title: L("编辑"))
+        edit.addItem(withTitle: L("撤销"), action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: L("重做"), action: Selector(("redo:")), keyEquivalent: "Z")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        let window = NSMenu(title: "窗口"); window.addItem(withTitle: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        edit.addItem(withTitle: L("剪切"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: L("拷贝"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: L("粘贴"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: L("全选"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let window = NSMenu(title: L("窗口")); window.addItem(withTitle: L("关闭"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         for menu in [app, edit, window] { let item = NSMenuItem(); item.submenu = menu; main.addItem(item) }
         return main
     }
@@ -180,7 +180,7 @@ final class MainController: NSViewController {
     }
     private func publish() {
         guard ready else { return }
-        let updated = lastUpdate.map { errors.isEmpty ? Formats.time.string(from: $0) + " 已刷新" : "更新失败 · 保留上次数据" } ?? "等待更新"
+        let updated = lastUpdate.map { errors.isEmpty ? L("%@ 已刷新", Formats.time.string(from: $0)) : L("更新失败 · 保留上次数据") } ?? L("等待更新")
         let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: end), end: end, updated: updated, sites: sites.map { site in
             let data = cache[site.id]
             return PanelSite(website: site, total: statistics[site.id]?.visitors ?? data?.0, points: data?.1, error: errors[site.id], stats: statistics[site.id], previousVisitors: previousVisitors[site.id], color: colors[site.id] ?? 0)

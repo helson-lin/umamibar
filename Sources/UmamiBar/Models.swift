@@ -1,5 +1,12 @@
 import Foundation
 
+/// Localized UI text. Keys are the Chinese source strings; en.lproj translates them and any
+/// missing entry falls back to the key. Format keys use %@ / %ld placeholders.
+func L(_ key: String, _ args: CVarArg...) -> String {
+    let format = Bundle.main.localizedString(forKey: key, value: nil, table: nil)
+    return args.isEmpty ? format : String(format: format, arguments: args)
+}
+
 struct Website: Codable, Equatable {
     let id: String
     let name: String
@@ -21,7 +28,7 @@ struct Stats: Decodable {
             if let value = try? c.decode(Double.self, forKey: key) { return value }
             return try c.decode(LegacyCount.self, forKey: key).value
         }
-        guard let visitorCount = try number(.visitors) else { throw ServiceError.message("统计响应缺少访客数。") }
+        guard let visitorCount = try number(.visitors) else { throw ServiceError.message(L("统计响应缺少访客数。")) }
         visitors = Int(visitorCount)
         pageviews = try number(.pageviews).map(Int.init)
         visits = try number(.visits).map(Int.init)
@@ -36,13 +43,13 @@ struct Stats: Decodable {
     var durationText: String {
         guard let visits = visits, let bounces = bounces, visits > bounces, let totalTime = totalTime else { return "—" }
         let seconds = max(0, Int(totalTime / Double(visits - bounces)))
-        return seconds < 60 ? "\(seconds)秒" : "\(seconds / 60)分\(seconds % 60)秒"
+        return seconds < 60 ? L("%ld秒", seconds) : L("%ld分%ld秒", seconds / 60, seconds % 60)
     }
     static func change(current: Int?, previous: Int?) -> String {
-        guard let current = current, let previous = previous else { return "— 较上期" }
-        if previous == 0 { return current > 0 ? "新增 · 上期为 0" : "— 持平" }
+        guard let current = current, let previous = previous else { return L("— 较上期") }
+        if previous == 0 { return current > 0 ? L("新增 · 上期为 0") : L("— 持平") }
         let percent = Double(current - previous) / Double(previous) * 100
-        return String(format: "%@ %.1f%% 较上期", percent > 0 ? "↑" : percent < 0 ? "↓" : "—", abs(percent))
+        return L("%@ %.1f%% 较上期", percent > 0 ? "↑" : percent < 0 ? "↓" : "—", abs(percent))
     }
 }
 struct MetricRow: Decodable {
@@ -51,7 +58,7 @@ struct MetricRow: Decodable {
 }
 enum Period: Int, CaseIterable {
     case day, week, month
-    var title: String { ["最近 24 小时", "最近 7 天", "最近一个月"][rawValue] }
+    var title: String { [L("最近 24 小时"), L("最近 7 天"), L("最近一个月")][rawValue] }
     var unit: String { self == .day ? "hour" : "day" }
     func start(before end: Date, calendar: Calendar = .current) -> Date {
         switch self {
@@ -74,12 +81,12 @@ struct Connection {
               let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil,
               parts.query == nil, parts.fragment == nil,
               parts.scheme == "https" || (parts.scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(host)) else {
-            throw ServiceError.message("请输入 HTTPS 服务地址（本地 localhost 可使用 HTTP）。")
+            throw ServiceError.message(L("请输入 HTTPS 服务地址（本地 localhost 可使用 HTTP）。"))
         }
         var path = parts.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if path.isEmpty { path = host == "api.umami.is" ? "v1" : "api" }
         parts.path = "/" + path
-        guard let url = parts.url else { throw ServiceError.message("服务地址无效。") }
+        guard let url = parts.url else { throw ServiceError.message(L("服务地址无效。")) }
         return url
     }
     func dashboard(_ website: Website) -> URL? {

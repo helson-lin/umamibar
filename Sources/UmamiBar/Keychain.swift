@@ -19,8 +19,8 @@ enum Keychain {
             item[kSecValueData as String] = data
             item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             let added = SecItemAdd(item as CFDictionary, nil)
-            guard added == errSecSuccess else { throw ServiceError.message("无法保存到钥匙串（\(added)）。") }
-        } else if status != errSecSuccess { throw ServiceError.message("无法更新钥匙串（\(status)）。") }
+            guard added == errSecSuccess else { throw ServiceError.message(L("无法保存到钥匙串（%ld）。", Int(added))) }
+        } else if status != errSecSuccess { throw ServiceError.message(L("无法更新钥匙串（%ld）。", Int(status))) }
     }
     static func delete() { SecItemDelete(query as CFDictionary) }
 }

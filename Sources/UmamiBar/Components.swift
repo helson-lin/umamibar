@@ -54,10 +54,10 @@ enum Palette {
         NSColor(srgbRed: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
     static let swatches = [
-        Swatch(name: "橙", top: rgb(0xFFAD78), base: rgb(0xE67B32)), Swatch(name: "绿", top: rgb(0x7ED9A8), base: rgb(0x1E9E68)),
-        Swatch(name: "蓝", top: rgb(0x8DB8FF), base: rgb(0x3B7DE8)), Swatch(name: "紫", top: rgb(0xC2A6FF), base: rgb(0x8B5CF6)),
-        Swatch(name: "粉", top: rgb(0xFFA3CC), base: rgb(0xE0528F)), Swatch(name: "青", top: rgb(0x7FE0D6), base: rgb(0x14A39A)),
-        Swatch(name: "金", top: rgb(0xFFD873), base: rgb(0xD99A0B)), Swatch(name: "红", top: rgb(0xFF9B8F), base: rgb(0xDE4B3E))]
+        Swatch(name: L("橙"), top: rgb(0xFFAD78), base: rgb(0xE67B32)), Swatch(name: L("绿"), top: rgb(0x7ED9A8), base: rgb(0x1E9E68)),
+        Swatch(name: L("蓝"), top: rgb(0x8DB8FF), base: rgb(0x3B7DE8)), Swatch(name: L("紫"), top: rgb(0xC2A6FF), base: rgb(0x8B5CF6)),
+        Swatch(name: L("粉"), top: rgb(0xFFA3CC), base: rgb(0xE0528F)), Swatch(name: L("青"), top: rgb(0x7FE0D6), base: rgb(0x14A39A)),
+        Swatch(name: L("金"), top: rgb(0xFFD873), base: rgb(0xD99A0B)), Swatch(name: L("红"), top: rgb(0xFF9B8F), base: rgb(0xDE4B3E))]
     static func swatch(_ index: Int) -> Swatch { swatches[(index % swatches.count + swatches.count) % swatches.count] }
     /// A filled dot for menus and legends.
     static func dot(_ index: Int, diameter: CGFloat = 12) -> NSImage {
@@ -79,6 +79,8 @@ final class PaintedButton: NSButton {
     enum Style { case plain, primary, segment, icon, secondary, destructive, navigation }
     var style: Style = .plain
     var selected = false
+    /// Which glyph an .icon button draws ("refresh" or the default gear); titles are localized, so never match on them.
+    var symbol = ""
     var callback: (() -> Void)?
     private var hovering = false
     private var area: NSTrackingArea?
@@ -136,13 +138,13 @@ final class PaintedButton: NSButton {
             arrow.line(to: NSPoint(x: center.x + 2.5, y: center.y + 5))
             arrow.stroke()
         }
-        else if style == .icon { drawIcon(title, in: bounds, color: color) }
+        else if style == .icon { drawIcon(symbol, in: bounds, color: color) }
         else { text(title, NSRect(x: 4, y: (bounds.height - (style == .navigation ? 23 : 15)) / 2, width: bounds.width - 8, height: style == .navigation ? 26 : 17), size: style == .navigation ? (title == "‹" ? 23 : 17) : style == .primary ? 12 : 11, color: color, weight: selected || style == .primary ? .medium : .regular, alignment: .center) }
     }
     private func drawIcon(_ kind: String, in rect: NSRect, color: NSColor) {
         color.setStroke(); let p = NSBezierPath(); p.lineWidth = 1.35; p.lineCapStyle = .round; p.lineJoinStyle = .round
         let center = NSPoint(x: rect.midX, y: rect.midY)
-        if kind == "刷新数据" {
+        if kind == "refresh" {
             p.appendArc(withCenter: center, radius: 5.4, startAngle: 25, endAngle: 325, clockwise: false)
             p.move(to: NSPoint(x: center.x + 7, y: center.y - 6)); p.line(to: NSPoint(x: center.x + 7, y: center.y)); p.line(to: NSPoint(x: center.x + 1, y: center.y))
         } else {
@@ -207,7 +209,7 @@ final class ColorSwatch: NSButton {
     init(color: Int, frame: NSRect) {
         self.color = color; super.init(frame: frame)
         isBordered = false; title = ""; target = self; action = #selector(openMenu)
-        toolTip = "图表颜色"; setAccessibilityLabel("图表颜色"); setAccessibilityValue(Palette.swatch(color).name)
+        toolTip = L("图表颜色"); setAccessibilityLabel(L("图表颜色")); setAccessibilityValue(Palette.swatch(color).name)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override var isFlipped: Bool { true }

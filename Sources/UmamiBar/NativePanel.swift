@@ -54,11 +54,11 @@ final class NativePanel: FlippedView {
         state = next
         subviews.forEach { if !(reuseOverview && $0 === overviewScroll) && !(reuseDetail && $0 === detailScroll) { $0.removeFromSuperview() } }
         if next.screen == "empty" {
-            _ = button("打开设置", NSRect(x: 22, y: 104, width: 316, height: 36), style: .primary) { [weak self] in self?.action("settings") }
-            _ = button("退出 UmamiBar", NSRect(x: 22, y: 148, width: 316, height: 36), style: .destructive) { [weak self] in self?.action("quit") }
+            _ = button(L("打开设置"), NSRect(x: 22, y: 104, width: 316, height: 36), style: .primary) { [weak self] in self?.action("settings") }
+            _ = button(L("退出 UmamiBar"), NSRect(x: 22, y: 148, width: 316, height: 36), style: .destructive) { [weak self] in self?.action("quit") }
         } else if next.screen == "detail", let selected = next.sites.first(where: { $0.website.id == next.detailID }) {
             let back = button("‹", NSRect(x: 20, y: 20, width: 29, height: 29), style: .navigation) { [weak self] in self?.action("back") }
-            back.setAccessibilityLabel("返回网站概览"); back.toolTip = "返回网站概览"
+            back.setAccessibilityLabel(L("返回网站概览")); back.toolTip = L("返回网站概览")
             _ = button("↗", NSRect(x: 310, y: 20, width: 29, height: 29), style: .navigation) { [weak self] in self?.action("dashboard", ["id": selected.website.id]) }
             for p in Period.allCases {
                 let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period
@@ -75,19 +75,19 @@ final class NativePanel: FlippedView {
                 scroll.documentView = body; addSubview(scroll); detailScroll = scroll
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: min(detailOffset.y, max(0, body.bounds.height-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
             }
-            _ = button("打开仪表盘 ↗", NSRect(x: 250, y: bounds.height - 34, width: 92, height: 26)) { [weak self] in self?.action("dashboard", ["id": selected.website.id]) }
+            _ = button(L("打开仪表盘 ↗"), NSRect(x: 250, y: bounds.height - 34, width: 92, height: 26)) { [weak self] in self?.action("dashboard", ["id": selected.website.id]) }
         } else if next.screen == "overview" {
-            let refresh = button("刷新数据", NSRect(x: 264, y: 22, width: 30, height: 30), style: .icon) { [weak self] in self?.action("refresh") }
-            refresh.isEnabled = !next.loading; refresh.toolTip = "立即刷新所有网站"; refresh.isHidden = next.loading
+            let refresh = button(L("刷新数据"), NSRect(x: 264, y: 22, width: 30, height: 30), style: .icon) { [weak self] in self?.action("refresh") }
+            refresh.symbol = "refresh"; refresh.isEnabled = !next.loading; refresh.toolTip = L("立即刷新所有网站"); refresh.isHidden = next.loading
             if next.loading {
                 let spinner = NSProgressIndicator(frame: NSRect(x: 271, y: 29, width: 16, height: 16))
                 spinner.style = .spinning; spinner.controlSize = .small; spinner.isIndeterminate = true
-                spinner.setAccessibilityLabel("正在刷新网站数据")
+                spinner.setAccessibilityLabel(L("正在刷新网站数据"))
                 addSubview(spinner); spinner.startAnimation(nil)
             }
-            let settings = button("连接设置", NSRect(x: 301, y: 22, width: 30, height: 30), style: .icon) { [weak self] in self?.action("settings") }; settings.toolTip = "连接与网站设置"
+            let settings = button(L("连接设置"), NSRect(x: 301, y: 22, width: 30, height: 30), style: .icon) { [weak self] in self?.action("settings") }; settings.toolTip = L("连接与网站设置")
             for p in Period.allCases {
-                let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period; b.setAccessibilityValue(b.selected ? "已选中" : "未选中")
+                let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
             }
             let frame = NSRect(x: 0, y: 135, width: bounds.width, height: max(40, bounds.height - 175))
             if reuseOverview, let scroll = overviewScroll, let document = scroll.documentView {
@@ -106,7 +106,7 @@ final class NativePanel: FlippedView {
                 document.frame = NSRect(x: 0, y: 0, width: 360, height: max(scroll.bounds.height, y)); scroll.documentView = document; addSubview(scroll); overviewScroll = scroll
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: min(overviewOffset.y, max(0, y-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
             }
-            _ = button("管理网站", NSRect(x: 272, y: bounds.height - 34, width: 70, height: 26)) { [weak self] in self?.action("manage") }
+            _ = button(L("管理网站"), NSRect(x: 272, y: bounds.height - 34, width: 70, height: 26)) { [weak self] in self?.action("manage") }
         }
         previousScreen = next.screen; needsDisplay = true
         // The header text is drawn in draw(_:), not by subviews; render it now so it slides with its screen.
@@ -117,19 +117,19 @@ final class NativePanel: FlippedView {
         drawSurface(bounds, radius: 18)
         guard let s = state else { return }
         if s.screen == "empty" {
-            text("连接 Umami", NSRect(x: 22, y: 22, width: 300, height: 22), size: 15, weight: .semibold)
-            text("在设置中填写服务地址和 API Key，并选择要关注的网站。", NSRect(x: 22, y: 55, width: 316, height: 32), color: Ink.secondary)
+            text(L("连接 Umami"), NSRect(x: 22, y: 22, width: 300, height: 22), size: 15, weight: .semibold)
+            text(L("在设置中填写服务地址和 API Key，并选择要关注的网站。"), NSRect(x: 22, y: 55, width: 316, height: 32), color: Ink.secondary)
         } else if s.screen == "detail", let site = s.sites.first(where: { $0.website.id == s.detailID }) {
             text(site.website.name, NSRect(x: 60, y: 19, width: 240, height: 18), size: 13, weight: .semibold)
             text(site.website.domain, NSRect(x: 60, y: 40, width: 240, height: 16), size: 10, color: Ink.secondary)
             fill(NSRect(x: 20, y: 76, width: 320, height: 35), NSColor(white: Ink.dark ? 0 : 0.2, alpha: Ink.dark ? 0.3 : 0.07), radius: 9)
             text(Formats.range.string(from: s.start) + " — " + Formats.range.string(from: s.end), NSRect(x: 21, y: 123, width: 300, height: 15), size: 10, color: Ink.secondary)
             fill(NSRect(x: 0, y: bounds.height-40, width: 360, height: 0.5), Ink.line)
-            text(s.loading ? "正在刷新…" : s.updated, NSRect(x: 20, y: bounds.height-28, width: 225, height: 17), size: 10, color: Ink.secondary)
+            text(s.loading ? L("正在刷新…") : s.updated, NSRect(x: 20, y: bounds.height-28, width: 225, height: 17), size: 10, color: Ink.secondary)
         } else if s.screen == "overview" {
             fill(NSRect(x: 20, y: 20, width: 32, height: 32), NSColor(white: 0.5, alpha: 0.18), radius: 9)
             for (i,h) in [9.0,15,12].enumerated() { fill(NSRect(x: 29 + Double(i)*5, y: 44-h, width: 2, height: h), Ink.text, radius: 1) }
-            text("网站概览", NSRect(x: 62, y: 19, width: 180, height: 18), size: 13, weight: .semibold); text("\(s.sites.count) 个网站", NSRect(x: 62, y: 40, width: 180, height: 16), color: Ink.secondary)
+            text(L("网站概览"), NSRect(x: 62, y: 19, width: 180, height: 18), size: 13, weight: .semibold); text(L("%ld 个网站", s.sites.count), NSRect(x: 62, y: 40, width: 180, height: 16), color: Ink.secondary)
             let toolRect = NSRect(x: 260, y: 18, width: 76, height: 38)
             fill(toolRect, NSColor(white: 0.5, alpha: 0.025), radius: 9)
             NSColor(white: Ink.dark ? 1 : 0, alpha: Ink.dark ? 0.05 : 0.045).setStroke(); NSBezierPath(roundedRect: toolRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 9, yRadius: 9).stroke()
@@ -143,18 +143,21 @@ final class NativePanel: FlippedView {
             fill(NSRect(x: 0, y: footerTop, width: bounds.width, height: 0.5), Ink.line)
             fill(NSRect(x: 0, y: footerTop + 0.5, width: bounds.width, height: 0.5), NSColor.white.withAlphaComponent(Ink.dark ? 0.025 : 0.8))
             fill(NSRect(x: 21, y: bounds.height-22, width: 4, height: 4), Ink.green, radius: 2)
-            text(s.loading ? "正在刷新 \(s.sites.count) 个网站…" : s.updated, NSRect(x: 30, y: bounds.height-28, width: 230, height: 17), size: 10, color: Ink.secondary)
+            text(s.loading ? L("正在刷新 %ld 个网站…", s.sites.count) : s.updated, NSRect(x: 30, y: bounds.height-28, width: 230, height: 17), size: 10, color: Ink.secondary)
         }
     }
 }
 private func drawGrowth(_ site: PanelSite, rect: NSRect) {
     let change = Stats.change(current: site.total, previous: site.previousVisitors)
-    let positive = change.hasPrefix("↑")
-    let color = positive ? Ink.green : change.hasPrefix("↓") || change.hasPrefix("新增") ? NSColor.systemOrange : Ink.secondary
+    // Color from the numbers, not the localized text: green for growth, orange for a decline or a new site.
+    var color = Ink.secondary
+    if let current = site.total, let previous = site.previousVisitors {
+        if previous > 0 && current > previous { color = Ink.green } else if current < previous || (previous == 0 && current > 0) { color = NSColor.systemOrange }
+    }
     text(change, rect, size: 9, color: color, alignment: .right)
 }
 private func drawStats(_ stats: Stats?, y: CGFloat) {
-    let fields = [("浏览量", stats?.pageviews.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"), ("跳出率", stats?.bounceText ?? "—"), ("平均时长", stats?.durationText ?? "—")]
+    let fields = [(L("浏览量"), stats?.pageviews.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"), (L("跳出率"), stats?.bounceText ?? "—"), (L("平均时长"), stats?.durationText ?? "—")]
     for (i, field) in fields.enumerated() {
         let x = CGFloat(20 + i * 107)
         if i > 0 { fill(NSRect(x: x-10, y: y, width: 0.5, height: 31), Ink.line) }
@@ -172,9 +175,9 @@ final class SiteCard: FlippedView {
     init(frame: NSRect, site: PanelSite, index: Int, state: PanelState) {
         self.site = site; self.index = index; self.state = state; super.init(frame: frame)
         // Hover area wraps the name (x 20, y 17) and domain (ends y 52) with ~10pt padding; the painted fill insets 1pt.
-        let openButton = PaintedButton("", frame: NSRect(x: 9, y: 9, width: 240, height: 48)) { [weak self] in self?.open?() }; openButton.toolTip = "查看 \(site.website.name) 详情"; openButton.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(openButton)
+        let openButton = PaintedButton("", frame: NSRect(x: 9, y: 9, width: 240, height: 48)) { [weak self] in self?.open?() }; openButton.toolTip = L("查看 %@ 详情", site.website.name); openButton.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(openButton)
         chart.points = site.points ?? []; chart.colorIndex = site.color; chart.showsScale = false
-        chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel("查看 \(site.website.name) 详情"); addSubview(chart)
+        chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(chart)
     }
     func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; needsDisplay = true }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
@@ -184,16 +187,16 @@ final class SiteCard: FlippedView {
         text(site.website.domain, NSRect(x: 20, y: 36, width: 218, height: 16), size: 10, color: Ink.secondary)
         let count = site.total.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"
         let line = NSMutableAttributedString(string: count, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .medium), .foregroundColor: Ink.text])
-        line.append(NSAttributedString(string: " 访客", attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
+        line.append(NSAttributedString(string: " " + L("访客"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
         line.draw(at: NSPoint(x: bounds.width - 20 - line.size().width, y: 17))
         drawGrowth(site, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
         do {
-            if site.points == nil { text(state.loading ? "正在加载…" : "趋势暂无数据", NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
+            if site.points == nil { text(state.loading ? L("正在加载…") : L("趋势暂无数据"), NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
             let formatter = Formats.axis(state.period)
             for (i,date) in [state.start, Date(timeIntervalSince1970: (state.start.timeIntervalSince1970+state.end.timeIntervalSince1970)/2),state.end].enumerated() { text(formatter.string(from: date), NSRect(x: 20+CGFloat(i)*106, y: 145, width: 106, height: 14), size: 9, color: Ink.secondary, alignment: i == 0 ? .left : i == 2 ? .right : .center) }
         }
         drawStats(site.stats, y: 171)
-        if let error = site.error { text("更新失败 · " + error, NSRect(x: 20, y: bounds.height-25, width: 320, height: 24), size: 10, color: .systemOrange) }
+        if let error = site.error { text(L("更新失败 · %@", error), NSRect(x: 20, y: bounds.height-25, width: 320, height: 24), size: 10, color: .systemOrange) }
     }
 }
 final class DetailBody: FlippedView {
@@ -211,39 +214,39 @@ final class DetailBody: FlippedView {
     }
     private func addControls() {
         for (i, value) in ["pages", "sources"].enumerated() {
-            let b = PaintedButton(i == 0 ? "热门页面" : "流量来源", frame: NSRect(x: 16+CGFloat(i)*88, y: 301, width: 80, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
+            let b = PaintedButton(i == 0 ? L("热门页面") : L("流量来源"), frame: NSRect(x: 16+CGFloat(i)*88, y: 301, width: 80, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
         }
         if state.detailError != nil {
-            let retry = PaintedButton("重新加载", frame: NSRect(x: 122, y: 401, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
+            let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 401, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
-        text("访客数", NSRect(x: 20, y: 20, width: 120, height: 16), size: 10, color: Ink.secondary)
+        text(L("访客数"), NSRect(x: 20, y: 20, width: 120, height: 16), size: 10, color: Ink.secondary)
         text(site.total.map(String.init) ?? "—", NSRect(x: 20, y: 40, width: 190, height: 43), size: 34, weight: .medium)
         drawGrowth(site, rect: NSRect(x: 185, y: 65, width: 155, height: 16))
         drawStats(site.stats, y: 100)
         fill(NSRect(x: 20, y: 148, width: 320, height: 0.5), Ink.line)
-        text("会话趋势", NSRect(x: 20, y: 161, width: 160, height: 17), weight: .semibold)
-        text(state.period == .day ? "每小时" : "每天", NSRect(x: 265, y: 161, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
-        if site.points == nil { text("趋势暂无数据", NSRect(x: 90, y: 214, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
+        text(L("会话趋势"), NSRect(x: 20, y: 161, width: 160, height: 17), weight: .semibold)
+        text(state.period == .day ? L("每小时") : L("每天"), NSRect(x: 265, y: 161, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
+        if site.points == nil { text(L("趋势暂无数据"), NSRect(x: 90, y: 214, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
         let formatter = Formats.axis(state.period)
         text(formatter.string(from: state.start), NSRect(x: 20, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary)
         text(formatter.string(from: state.end), NSRect(x: 240, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary, alignment: .right)
         fill(NSRect(x: 20, y: 335, width: 320, height: 0.5), Ink.line)
-        text(state.breakdown == "pages" ? "页面路径" : "来源", NSRect(x: 20, y: 348, width: 160, height: 15), size: 9, color: Ink.secondary)
-        text("次数 / 前5项占比", NSRect(x: 210, y: 348, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
-        if state.detailLoading { text("正在加载…", NSRect(x: 20, y: 383, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        text(state.breakdown == "pages" ? L("页面路径") : L("来源"), NSRect(x: 20, y: 348, width: 160, height: 15), size: 9, color: Ink.secondary)
+        text(L("次数 / 前5项占比"), NSRect(x: 210, y: 348, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
+        if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 383, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
         else if let error = state.detailError { text(error, NSRect(x: 20, y: 377, width: 320, height: 24), size: 10, color: .systemOrange) }
         else if let rows = state.rows, !rows.isEmpty {
             let sum = rows.reduce(0) { $0 + $1.y }
             for (i,row) in rows.prefix(5).enumerated() {
                 let y = CGFloat(371+i*32); let ratio = sum > 0 ? row.y/sum : 0
                 fill(NSRect(x: 20, y: y, width: 320*ratio, height: 29), Palette.swatch(site.color).base.withAlphaComponent(0.09), radius: 4)
-                text(row.x.flatMap { $0.isEmpty ? nil : $0 } ?? (state.breakdown == "sources" ? "直接访问" : "/"), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
+                text(row.x.flatMap { $0.isEmpty ? nil : $0 } ?? (state.breakdown == "sources" ? L("直接访问") : "/"), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
                 text("\(Int(row.y))   \(Int((ratio*100).rounded()))%", NSRect(x: 235, y: y+8, width: 97, height: 15), size: 10, alignment: .right)
             }
-        } else { text("该时段暂无数据", NSRect(x: 20, y: 383, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        text("仅展示前 5 项 · 占比按当前返回的前 5 项计算", NSRect(x: 20, y: 535, width: 320, height: 17), size: 9, color: Ink.secondary)
+        } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 383, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        text(L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 535, width: 320, height: 17), size: 9, color: Ink.secondary)
     }
 }

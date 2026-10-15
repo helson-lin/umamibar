@@ -139,6 +139,10 @@ open dist/UmamiBar.app
 - 取消选择不会从 Umami 删除网站。
 - 当前仅支持一个 Umami 实例。
 
+### 语言
+
+UmamiBar 支持简体中文和英文，默认跟随 macOS 系统语言；也可在“系统设置 → 通用 → 语言与地区 → 应用程序”中单独为 UmamiBar 选择语言。其他语言回退为英文。界面文案位于 `Resources/<语言>.lproj/Localizable.strings`，键为代码中 `L("…")` 的中文原文；缺少翻译时 `tests-release/test_localization.py` 会失败。
+
 ## 查看网站
 
 ### 概览

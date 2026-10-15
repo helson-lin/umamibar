@@ -41,7 +41,7 @@ enum TimeBuckets {
         let first = cursor
         for point in points {
             guard let date = parse(point.x), let bucket = calendar.dateInterval(of: component, for: date)?.start else {
-                throw ServiceError.message("时间序列日期格式不兼容，无法定位时间桶。")
+                throw ServiceError.message(L("时间序列日期格式不兼容，无法定位时间桶。"))
             }
             guard bucket >= first, bucket <= end else { continue }
             values[bucket, default: 0] += point.y
@@ -55,7 +55,7 @@ enum TimeBuckets {
             cursor = next
         }
         if points.contains(where: { $0.y > 0 }) && !result.contains(where: { $0.y > 0 }) {
-            throw ServiceError.message("趋势时间与查询范围不一致，无法显示；请重试。")
+            throw ServiceError.message(L("趋势时间与查询范围不一致，无法显示；请重试。"))
         }
         return result
     }

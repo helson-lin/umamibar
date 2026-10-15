@@ -17,4 +17,5 @@ if otool -L "$BIN" | grep -q 'WebKit.framework'; then echo 'Unexpected WebKit de
 ACTUAL="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 test "$ACTUAL" = "$(cat VERSION)"
 test -s "$APP/Contents/Resources/AppIcon.icns"
+for lang in en zh-Hans; do plutil -lint -s "$APP/Contents/Resources/$lang.lproj/Localizable.strings"; done
 echo "Universal app verification passed ($ACTUAL)."

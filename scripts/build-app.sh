@@ -25,6 +25,8 @@ cat > "$ROOT/dist/UmamiBar.app/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>app.umamibar</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleName</key><string>UmamiBar</string>
 <key>CFBundleExecutable</key><string>UmamiBar</string>
@@ -41,5 +43,7 @@ PLIST
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$ROOT/dist/UmamiBar.app/Contents/Info.plist"
 mkdir -p "$ROOT/dist/UmamiBar.app/Contents/Resources"
 cp assets/AppIcon.icns "$ROOT/dist/UmamiBar.app/Contents/Resources/AppIcon.icns"
+# UI strings: the app follows the system (or per-app) language; anything but Chinese falls back to English.
+cp -R Resources/en.lproj Resources/zh-Hans.lproj "$ROOT/dist/UmamiBar.app/Contents/Resources/"
 codesign --force --deep --sign - "$ROOT/dist/UmamiBar.app"
 echo "Built: $ROOT/dist/UmamiBar.app"

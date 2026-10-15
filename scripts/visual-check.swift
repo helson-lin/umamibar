@@ -20,7 +20,7 @@ import AppKit
   panel.onAction = { name, _ in actions.append(name) }
   panel.render(state);panel.layoutSubtreeIfNeeded()
   if CommandLine.arguments.contains("--click-tests") {
-   let expected = screen == "empty" ? "退出 UmamiBar" : "刷新数据"
+   let expected = screen == "empty" ? L("退出 UmamiBar") : L("刷新数据")
    guard let button = panel.subviews.compactMap({ $0 as? PaintedButton }).first(where: { $0.title == expected }) else { fatalError("Missing button") }
    button.performClick(nil)
    precondition(actions == [screen == "empty" ? "quit" : "refresh"], "Wrong action: \(actions)")
@@ -47,7 +47,7 @@ import AppKit
    actions = []; state.screen = "detail"; state.detailID = "2"; panel.render(state)
    let detailScroll = panel.subviews.compactMap { $0 as? NSScrollView }.first!
    let body = detailScroll.documentView as! DetailBody
-   body.subviews.compactMap { $0 as? PaintedButton }.first { $0.title == "流量来源" }!.performClick(nil)
+   body.subviews.compactMap { $0 as? PaintedButton }.first { $0.title == L("流量来源") }!.performClick(nil)
    panel.subviews.compactMap { $0 as? PaintedButton }.first { $0.title == "‹" }!.performClick(nil)
    precondition(actions == ["breakdown", "back"])
    print("Native navigation dispatch passed")
@@ -74,14 +74,14 @@ func settingsCheck(appearance: String, screen: String) {
   let fields = controls(NSTextField.self).filter { $0.isEditable }
   fields.first { !($0 is NSSecureTextField) }!.stringValue = mock
   fields.first { $0 is NSSecureTextField }!.stringValue = "test-key"
-  tap("验证并选择网站")
+  tap(L("验证并选择网站"))
   let deadline = Date().addingTimeInterval(5)
   while controls(WebsiteChoice.self).isEmpty && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
   let checks = controls(WebsiteChoice.self)
   print("Websites listed: \(checks.count)")
   if CommandLine.arguments.contains("--save-test") {
    checks.prefix(2).forEach { $0.performClick(nil) }
-   tap("保存并查看")
+   tap(L("保存并查看"))
    precondition(saved.count == 2 && !window.isVisible, "Save failed: \(saved)")
    precondition(Set(savedColors.keys) == Set(saved) && Set(savedColors.values).count == 2, "Colors not saved: \(savedColors)")
    print("Settings save passed: \(saved) colors \(savedColors)")
@@ -89,7 +89,7 @@ func settingsCheck(appearance: String, screen: String) {
   }
   if screen == "settings-websites" { checks.prefix(3).forEach { $0.performClick(nil) }; precondition(controls(ColorSwatch.self).count == 3, "Swatches missing") }
  }
- tap(["settings-connection": "连接", "settings-websites": "网站", "settings-general": "通用"][screen] ?? "连接")
+ tap(["settings-connection": L("连接"), "settings-websites": L("网站"), "settings-general": L("通用")][screen] ?? L("连接"))
  RunLoop.main.run(until: Date().addingTimeInterval(0.3))
  let frame = window.contentView!.superview!
  frame.display()

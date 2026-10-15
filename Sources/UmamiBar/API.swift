@@ -22,18 +22,18 @@ final class API: NSObject, URLSessionTaskDelegate {
         let task = session.dataTask(with: request) { data, response, error in
             let result: Result<T, Error> = Result {
                 if let error = error { throw error }
-                guard let http = response as? HTTPURLResponse else { throw ServiceError.message("服务未返回有效响应。") }
+                guard let http = response as? HTTPURLResponse else { throw ServiceError.message(L("服务未返回有效响应。")) }
                 switch http.statusCode {
                 case 200...299: break
-                case 401: throw ServiceError.blocking("API Key 无效或已撤销，请更新连接设置。")
-                case 403: throw ServiceError.message("API Key 没有访问权限。")
-                case 404: throw ServiceError.message("找不到接口，请检查 API 地址与 Umami 版本。")
-                case 429: throw ServiceError.blocking("请求已被限流，请稍后手动刷新。")
-                case 300...399: throw ServiceError.message("服务发生重定向，请直接填写最终 API 地址。")
-                default: throw ServiceError.message("服务请求失败（HTTP \(http.statusCode)）。")
+                case 401: throw ServiceError.blocking(L("API Key 无效或已撤销，请更新连接设置。"))
+                case 403: throw ServiceError.message(L("API Key 没有访问权限。"))
+                case 404: throw ServiceError.message(L("找不到接口，请检查 API 地址与 Umami 版本。"))
+                case 429: throw ServiceError.blocking(L("请求已被限流，请稍后手动刷新。"))
+                case 300...399: throw ServiceError.message(L("服务发生重定向，请直接填写最终 API 地址。"))
+                default: throw ServiceError.message(L("服务请求失败（HTTP %ld）。", http.statusCode))
                 }
                 do { return try JSONDecoder().decode(T.self, from: data ?? Data()) }
-                catch { throw ServiceError.message("响应格式不兼容，请确认服务支持当前 Umami API。") }
+                catch { throw ServiceError.message(L("响应格式不兼容，请确认服务支持当前 Umami API。")) }
             }
             DispatchQueue.main.async { completion(result) }
         }
