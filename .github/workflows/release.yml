@@ -1,0 +1,87 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Require stable tag matching VERSION
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          tag = os.environ['TAG']
+          assert re.fullmatch(r'v\d+\.\d+\.\d+', tag), 'Use vX.Y.Z stable tags'
+          assert tag == 'v' + Path('VERSION').read_text().strip(), 'Tag must match VERSION'
+          PY
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: ci
+    runs-on: macos-15
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: UmamiBar-macos-15
+          path: dist
+      - name: Verify archive and render Cask
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          (cd dist && shasum -a 256 -c SHA256SUMS)
+          python3 scripts/generate-cask.py --repository "$REPOSITORY" --version "$(cat VERSION)" --archive "dist/UmamiBar-$(cat VERSION)-universal.zip"
+          ruby -c dist/umamibar.rb
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" "dist/UmamiBar-$(cat VERSION)-universal.zip" dist/SHA256SUMS dist/umamibar.rb --verify-tag --title "UmamiBar $TAG" --generate-notes
+  homebrew:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Propose Homebrew update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p Casks
+          gh release download "$TAG" --pattern umamibar.rb --dir /tmp/umamibar-cask
+          cp /tmp/umamibar-cask/umamibar.rb Casks/umamibar.rb
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "automation/homebrew-$TAG"
+          git add Casks/umamibar.rb
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore(homebrew): update UmamiBar to $TAG"
+          git push origin "automation/homebrew-$TAG"
+          printf 'Updates the Homebrew Cask to the published release and its exact SHA-256. Merge to make the version available through the tap.\n' > /tmp/cask-pr.md
+          gh pr create --title "chore(homebrew): update to $TAG" --body-file /tmp/cask-pr.md --head "automation/homebrew-$TAG"
