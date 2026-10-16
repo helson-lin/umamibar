@@ -59,14 +59,12 @@
 
 ## 截图
 
-<p align="center">
-  <img src="docs/previews/dark-overview.png" width="215" alt="深色模式概览">
-  <img src="docs/previews/dark-detail.png" width="215" alt="深色模式网站详情">
-  <img src="docs/previews/light-overview.png" width="215" alt="浅色模式概览">
-  <img src="docs/previews/light-detail.png" width="215" alt="浅色模式网站详情">
-</p>
+| 模式 | 概览 | 网站详情 |
+| --- | --- | --- |
+| 深色 | <img src="docs/previews/dark-overview.png" width="260" alt="深色模式概览"> | <img src="docs/previews/dark-detail.png" width="260" alt="深色模式网站详情"> |
+| 浅色 | <img src="docs/previews/light-overview.png" width="260" alt="浅色模式概览"> | <img src="docs/previews/light-detail.png" width="260" alt="浅色模式网站详情"> |
 
-截图使用示例数据。从左到右依次为：深色模式概览、深色模式网站详情、浅色模式概览、浅色模式网站详情。
+截图使用示例数据。
 
 <a id="requirements"></a>
 

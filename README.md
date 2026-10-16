@@ -59,14 +59,12 @@ Built with **AppKit**, native drawing, `URLSession`, and macOS Keychain. The app
 
 ## Screenshots
 
-<p align="center">
-  <img src="docs/previews/dark-overview.png" width="215" alt="Overview in dark mode">
-  <img src="docs/previews/dark-detail.png" width="215" alt="Website details in dark mode">
-  <img src="docs/previews/light-overview.png" width="215" alt="Overview in light mode">
-  <img src="docs/previews/light-detail.png" width="215" alt="Website details in light mode">
-</p>
+| Mode | Overview | Website details |
+| --- | --- | --- |
+| Dark | <img src="docs/previews/dark-overview.png" width="260" alt="Overview in dark mode"> | <img src="docs/previews/dark-detail.png" width="260" alt="Website details in dark mode"> |
+| Light | <img src="docs/previews/light-overview.png" width="260" alt="Overview in light mode"> | <img src="docs/previews/light-detail.png" width="260" alt="Website details in light mode"> |
 
-Sample data. Left to right: overview and details in dark mode, then overview and details in light mode.
+Sample data.
 
 ## Requirements
 
