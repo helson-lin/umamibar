@@ -24,5 +24,17 @@ then
   exit 1
 fi
 if [[ "$submission_exit" != 0 ]]; then exit "$submission_exit"; fi
-xcrun stapler staple "$TARGET"
-xcrun stapler validate "$TARGET"
+stapler_with_retry() {
+  local attempt status
+  for attempt in 1 2 3 4 5; do
+    status=0
+    xcrun stapler "$1" "$TARGET" || status=$?
+    if [[ "$status" == 0 ]]; then return 0; fi
+    # CloudKit connection failures return 68; don't retry invalid signatures.
+    if [[ "$status" != 68 || "$attempt" == 5 ]]; then return "$status"; fi
+    echo "Apple ticket service unavailable; retrying $1 ($attempt/5)." >&2
+    sleep "$((attempt * 10))"
+  done
+}
+stapler_with_retry staple
+stapler_with_retry validate
