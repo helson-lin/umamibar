@@ -5,6 +5,7 @@ MODE="${1:-universal}"
 if [[ "$MODE" != "universal" && "$MODE" != "native" ]]; then echo "Usage: $0 [universal|native]" >&2; exit 1; fi
 APP_VERSION="$(cat VERSION)"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
+SIGNING_IDENTITY="$(printf '%s' "${SIGNING_IDENTITY:--}" | python3 -c 'import sys; print(sys.stdin.read().strip())')"
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then echo "Invalid VERSION or BUILD_NUMBER" >&2; exit 1; fi
 ROOT="$PWD"
 BUILD="${TMPDIR:-/tmp}/umamibar-release"
@@ -48,6 +49,8 @@ cp -R Resources/en.lproj Resources/zh-Hans.lproj "$ROOT/dist/UmamiBar.app/Conten
 if [[ "${SIGNING_IDENTITY:--}" == "-" ]]; then
   codesign --force --sign - "$ROOT/dist/UmamiBar.app"
 else
-  codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$ROOT/dist/UmamiBar.app"
+  SIGNING_ARGS=(--force --options runtime --timestamp --sign "$SIGNING_IDENTITY")
+  if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then SIGNING_ARGS+=(--keychain "$SIGNING_KEYCHAIN"); fi
+  codesign "${SIGNING_ARGS[@]}" "$ROOT/dist/UmamiBar.app"
 fi
 echo "Built: $ROOT/dist/UmamiBar.app"

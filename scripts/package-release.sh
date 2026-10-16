@@ -3,6 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ./scripts/verify-app.sh
 DMG_PYTHON="${DMG_PYTHON:-python3}"
+if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
+  SIGNING_IDENTITY="$(printf '%s' "$SIGNING_IDENTITY" | python3 -c 'import sys; print(sys.stdin.read().strip())')"
+fi
 if ! "$DMG_PYTHON" -c 'import dmgbuild' 2>/dev/null; then
   echo 'Install DMG tooling: python3 -m venv /tmp/umamibar-dmg-tools && /tmp/umamibar-dmg-tools/bin/pip install -r scripts/requirements-dmg.txt' >&2
   echo 'Then run with DMG_PYTHON=/tmp/umamibar-dmg-tools/bin/python' >&2
@@ -27,7 +30,9 @@ ditto -c -k --keepParent --norsrc dist/UmamiBar.app "dist/$ARCHIVE"
 # dmgbuild writes Finder metadata without requiring a GUI session in CI.
 "$DMG_PYTHON" -m dmgbuild -s scripts/dmg-settings.py "UmamiBar $VERSION" "dist/$DMG"
 if [[ "${NOTARIZE:-0}" == "1" ]]; then
-  codesign --force --timestamp --sign "$SIGNING_IDENTITY" "dist/$DMG"
+  SIGNING_ARGS=(--force --timestamp --sign "$SIGNING_IDENTITY")
+  if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then SIGNING_ARGS+=(--keychain "$SIGNING_KEYCHAIN"); fi
+  codesign "${SIGNING_ARGS[@]}" "dist/$DMG"
   codesign --verify --strict "dist/$DMG"
   ./scripts/notarize.sh "dist/$DMG" "dist/$DMG"
   spctl --assess --type open --context context:primary-signature --verbose=2 "dist/$DMG"
