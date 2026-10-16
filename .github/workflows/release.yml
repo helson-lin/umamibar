@@ -65,11 +65,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
           security list-keychains -d user -s "$KEYCHAIN"
           rm -f "$CERTIFICATE"
+          SIGNING_KEYCHAIN="$KEYCHAIN" python3 scripts/select-signing-identity.py
           xcrun notarytool store-credentials umamibar-release --keychain "$KEYCHAIN" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
       - name: Build, sign, notarize, and package
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           NOTARY_PROFILE: umamibar-release
           NOTARIZE: '1'
