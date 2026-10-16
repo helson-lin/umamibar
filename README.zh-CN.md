@@ -32,6 +32,7 @@
 ## 目录
 
 - [功能](#功能)
+- [截图](#截图)
 - [环境要求](#requirements)
 - [Homebrew 安装](#homebrew-安装)
 - [构建与运行](#构建与运行)
@@ -55,6 +56,15 @@
 - **安全存储**：API Key 保存到钥匙串，网站选择和偏好保存在本地。
 
 > 文档支持英文和中文切换。当前应用界面使用中文，尚未实现应用内语言切换。
+
+## 截图
+
+| 模式 | 概览 | 网站详情 |
+| --- | --- | --- |
+| 深色 | <img src="docs/previews/dark-overview.png" width="260" alt="深色模式概览"> | <img src="docs/previews/dark-detail.png" width="260" alt="深色模式网站详情"> |
+| 浅色 | <img src="docs/previews/light-overview.png" width="260" alt="浅色模式概览"> | <img src="docs/previews/light-detail.png" width="260" alt="浅色模式网站详情"> |
+
+截图使用示例数据。
 
 <a id="requirements"></a>
 
@@ -283,3 +293,7 @@ python3 -m http.server 8765 --bind 127.0.0.1
 建议在 GitHub 仓库的 About → Topics 中设置：
 
 [`umami`](https://github.com/topics/umami) · [`macos`](https://github.com/topics/macos) · [`menu-bar`](https://github.com/topics/menu-bar) · [`swift`](https://github.com/topics/swift) · [`appkit`](https://github.com/topics/appkit) · [`analytics`](https://github.com/topics/analytics) · [`privacy`](https://github.com/topics/privacy) · [`macos-app`](https://github.com/topics/macos-app)
+
+## 开源协议
+
+[MIT](LICENSE) © 2026 helson-lin

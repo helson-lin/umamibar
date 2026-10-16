@@ -32,6 +32,7 @@ Built with **AppKit**, native drawing, `URLSession`, and macOS Keychain. The app
 ## Contents
 
 - [Features](#features)
+- [Screenshots](#screenshots)
 - [Requirements](#requirements)
 - [Homebrew installation](#homebrew-installation)
 - [Build and run](#build-and-run)
@@ -55,6 +56,15 @@ Built with **AppKit**, native drawing, `URLSession`, and macOS Keychain. The app
 - **Secure credentials:** API keys are stored in Keychain; website selections and preferences are stored locally.
 
 > The documentation is available in English and Chinese. The current app interface is in Chinese; an in-app language switch is not implemented.
+
+## Screenshots
+
+| Mode | Overview | Website details |
+| --- | --- | --- |
+| Dark | <img src="docs/previews/dark-overview.png" width="260" alt="Overview in dark mode"> | <img src="docs/previews/dark-detail.png" width="260" alt="Website details in dark mode"> |
+| Light | <img src="docs/previews/light-overview.png" width="260" alt="Overview in light mode"> | <img src="docs/previews/light-detail.png" width="260" alt="Website details in light mode"> |
+
+Sample data.
 
 ## Requirements
 
@@ -281,3 +291,7 @@ See [PRD.md](PRD.md) for the requirements history. Checked-in images under `docs
 Suggested repository topics:
 
 [`umami`](https://github.com/topics/umami) · [`macos`](https://github.com/topics/macos) · [`menu-bar`](https://github.com/topics/menu-bar) · [`swift`](https://github.com/topics/swift) · [`appkit`](https://github.com/topics/appkit) · [`analytics`](https://github.com/topics/analytics) · [`privacy`](https://github.com/topics/privacy) · [`macos-app`](https://github.com/topics/macos-app)
+
+## License
+
+[MIT](LICENSE) © 2026 helson-lin
