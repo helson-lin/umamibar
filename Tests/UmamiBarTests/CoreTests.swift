@@ -2,6 +2,24 @@ import XCTest
 @testable import UmamiBar
 
 final class CoreTests: XCTestCase {
+    func testDetailDimensionsAndMissingLabels() throws {
+        XCTAssertEqual(DetailDimension.options(for: "utm").map(\.rawValue), ["utmSource", "utmMedium", "utmCampaign", "utmTerm", "utmContent"])
+        XCTAssertEqual(DetailDimension.options(for: "location").map(\.rawValue), ["country", "region", "city"])
+        XCTAssertTrue(DetailDimension.options(for: "invalid").isEmpty)
+        for dimension in DetailDimension.allCases {
+            for json in [#"{"x":null,"y":3}"#, #"{"x":"","y":3}"#, #"{"y":3}"#] {
+                let row = try JSONDecoder().decode(MetricRow.self, from: Data(json.utf8))
+                XCTAssertFalse(dimension.label(for: row.x).isEmpty)
+                XCTAssertEqual(row.y, 3)
+            }
+        }
+        XCTAssertEqual(DetailDimension.utmCampaign.label(for: nil), L("未设置"))
+        XCTAssertEqual(DetailDimension.city.label(for: "  "), L("未知位置"))
+        XCTAssertEqual(DetailDimension.sources.label(for: nil), L("直接访问"))
+        XCTAssertEqual(DetailDimension.country.label(for: "US", locale: Locale(identifier: "en_US")), "United States")
+        XCTAssertEqual(DetailDimension.city.label(for: "San Francisco"), "San Francisco")
+    }
+
     func testConnectionNormalization() throws {
         XCTAssertEqual(try Connection.baseURL("https://api.umami.is").absoluteString, "https://api.umami.is/v1")
         XCTAssertEqual(try Connection.baseURL("https://stats.example.com").path, "/api")

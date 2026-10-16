@@ -16,6 +16,11 @@ import AppKit
    PanelSite(website: site.website, total: site.total, points: site.points, error: nil, stats: fixture, previousVisitors: [0,30,16][index], color: [0,2,4][index])
   }
   if screen == "detail" { state.detailID = "2"; state.rows = [MetricRow(x:"/docs/quick-start",y:27),MetricRow(x:"/docs/api",y:16),MetricRow(x:"/docs/install",y:10),MetricRow(x:"/docs/guides",y:7),MetricRow(x:"/",y:4)] }
+  if let dimensionFlag = CommandLine.arguments.first(where: { $0.hasPrefix("--dimension=") }),
+     let dimension = DetailDimension(rawValue: String(dimensionFlag.dropFirst("--dimension=".count))) {
+   state.dimension = dimension; state.breakdown = dimension.category
+   state.rows = [MetricRow(x: dimension == .country ? "CN" : "google", y: 27), MetricRow(x: "newsletter", y: 16), MetricRow(x: "very_long_campaign_name_for_autumn_product_launch", y: 10), MetricRow(x: nil, y: 7), MetricRow(x: "", y: 4)]
+  }
   var actions: [String] = []
   panel.onAction = { name, _ in actions.append(name) }
   panel.render(state);panel.layoutSubtreeIfNeeded()
@@ -50,7 +55,16 @@ import AppKit
    body.subviews.compactMap { $0 as? PaintedButton }.first { $0.title == L("流量来源") }!.performClick(nil)
    panel.subviews.compactMap { $0 as? PaintedButton }.first { $0.title == "‹" }!.performClick(nil)
    precondition(actions == ["breakdown", "back"])
-   print("Native navigation dispatch passed")
+   for dimension in [DetailDimension.utmCampaign, .city] {
+    state.dimension = dimension; state.breakdown = dimension.category; panel.render(state)
+    let popup = body.subviews.compactMap { $0 as? NSPopUpButton }.first!
+    precondition(popup.selectedItem?.representedObject as? String == dimension.rawValue)
+    precondition(popup.numberOfItems == DetailDimension.options(for: dimension.category).count)
+    popup.selectItem(at: 0); actions = []
+    NSApp.sendAction(popup.action!, to: popup.target, from: popup)
+    precondition(actions == ["dimension"])
+   }
+   print("Native navigation and dimension dispatch passed")
   }
   panel.display()
   if let bitmap=panel.bitmapImageRepForCachingDisplay(in:panel.bounds) { panel.cacheDisplay(in:panel.bounds,to:bitmap);if let data=bitmap.representation(using:.png,properties:[:]) { try! data.write(to: URL(fileURLWithPath:"/tmp/native-\(appearance)-\(screen).png")) } }

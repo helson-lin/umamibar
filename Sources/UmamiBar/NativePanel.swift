@@ -5,7 +5,7 @@ struct PanelState {
     var screen: String; var loading: Bool
     var period: Period; var start: Date; var end: Date; var updated: String
     var sites: [PanelSite]
-    var detailID: String? = nil; var breakdown = "pages"; var rows: [MetricRow]? = nil
+    var detailID: String? = nil; var breakdown = "pages"; var dimension: DetailDimension = .pages; var rows: [MetricRow]? = nil
     var detailLoading = false; var detailError: String? = nil
 }
 final class NativePanel: FlippedView {
@@ -69,8 +69,9 @@ final class NativePanel: FlippedView {
             } else {
                 let scroll = NSScrollView(frame: frame)
                 scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
-                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 566), site: selected, state: next)
+                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 610), site: selected, state: next)
                 body.onBreakdown = { [weak self] value in self?.action("breakdown", ["value": value]) }
+                body.onDimension = { [weak self] value in self?.action("dimension", ["value": value.rawValue]) }
                 body.onRetry = { [weak self] in self?.action("detailRetry") }
                 scroll.documentView = body; addSubview(scroll); detailScroll = scroll
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: min(detailOffset.y, max(0, body.bounds.height-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
@@ -203,6 +204,7 @@ final class DetailBody: FlippedView {
     private(set) var site: PanelSite; private(set) var state: PanelState
     private let chart = ChartView(frame: NSRect(x: 20, y: 181, width: 320, height: 90))
     var onBreakdown: ((String) -> Void)?
+    var onDimension: ((DetailDimension) -> Void)?
     var onRetry: (() -> Void)?
     init(frame: NSRect, site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; super.init(frame: frame)
@@ -213,12 +215,28 @@ final class DetailBody: FlippedView {
         subviews.filter { $0 !== chart }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
     }
     private func addControls() {
-        for (i, value) in ["pages", "sources"].enumerated() {
-            let b = PaintedButton(i == 0 ? L("热门页面") : L("流量来源"), frame: NSRect(x: 16+CGFloat(i)*88, y: 301, width: 80, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
+        for (i, value) in ["pages", "sources", "utm", "location"].enumerated() {
+            let b = PaintedButton([L("热门页面"), L("流量来源"), "UTM", L("位置")][i], frame: NSRect(x: 16+CGFloat(i)*82, y: 301, width: 80, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
+        }
+        if state.breakdown == "utm" || state.breakdown == "location" {
+            let popup = NSPopUpButton(frame: NSRect(x: 112, y: 344, width: 228, height: 26), pullsDown: false)
+            for option in DetailDimension.options(for: state.breakdown) {
+                popup.addItem(withTitle: option.title)
+                popup.lastItem?.representedObject = option.rawValue
+            }
+            popup.selectItem(withTitle: state.dimension.title)
+            popup.font = .systemFont(ofSize: 10)
+            popup.target = self; popup.action = #selector(dimensionChanged(_:))
+            popup.setAccessibilityLabel(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"))
+            addSubview(popup)
         }
         if state.detailError != nil {
-            let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 401, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
+            let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 445, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
         }
+    }
+    @objc private func dimensionChanged(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String, let value = DetailDimension(rawValue: raw) else { return }
+        onDimension?(value)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
@@ -234,19 +252,21 @@ final class DetailBody: FlippedView {
         text(formatter.string(from: state.start), NSRect(x: 20, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary)
         text(formatter.string(from: state.end), NSRect(x: 240, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary, alignment: .right)
         fill(NSRect(x: 20, y: 335, width: 320, height: 0.5), Ink.line)
-        text(state.breakdown == "pages" ? L("页面路径") : L("来源"), NSRect(x: 20, y: 348, width: 160, height: 15), size: 9, color: Ink.secondary)
-        text(L("次数 / 前5项占比"), NSRect(x: 210, y: 348, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
-        if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 383, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        else if let error = state.detailError { text(error, NSRect(x: 20, y: 377, width: 320, height: 24), size: 10, color: .systemOrange) }
+        let offset: CGFloat = state.breakdown == "utm" || state.breakdown == "location" ? 44 : 0
+        if offset > 0 { text(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"), NSRect(x: 20, y: 351, width: 88, height: 16), size: 10, color: Ink.secondary) }
+        text(state.dimension.title, NSRect(x: 20, y: 348+offset, width: 160, height: 15), size: 9, color: Ink.secondary)
+        text(L("次数 / 前5项占比"), NSRect(x: 210, y: 348+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
+        if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        else if let error = state.detailError { text(error, NSRect(x: 20, y: 377+offset, width: 320, height: 24), size: 10, color: .systemOrange) }
         else if let rows = state.rows, !rows.isEmpty {
             let sum = rows.reduce(0) { $0 + $1.y }
             for (i,row) in rows.prefix(5).enumerated() {
-                let y = CGFloat(371+i*32); let ratio = sum > 0 ? row.y/sum : 0
+                let y = CGFloat(371+i*32)+offset; let ratio = sum > 0 ? row.y/sum : 0
                 fill(NSRect(x: 20, y: y, width: 320*ratio, height: 29), Palette.swatch(site.color).base.withAlphaComponent(0.09), radius: 4)
-                text(row.x.flatMap { $0.isEmpty ? nil : $0 } ?? (state.breakdown == "sources" ? L("直接访问") : "/"), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
+                text(state.dimension.label(for: row.x), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
                 text("\(Int(row.y))   \(Int((ratio*100).rounded()))%", NSRect(x: 235, y: y+8, width: 97, height: 15), size: 10, alignment: .right)
             }
-        } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 383, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        text(L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 535, width: 320, height: 17), size: 9, color: Ink.secondary)
+        } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        text(state.breakdown == "utm" ? L("未携带字段显示「未设置」· 占比按前 5 项计算") : state.breakdown == "location" ? L("缺失位置显示「未知位置」· 占比按前 5 项计算") : L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 535+offset, width: 320, height: 17), size: 9, color: Ink.secondary)
     }
 }
