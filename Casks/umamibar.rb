@@ -7,7 +7,7 @@ cask "umamibar" do
   desc "Native Umami analytics for your macOS menu bar"
   homepage "https://github.com/helson-lin/umamibar"
 
-  depends_on macos: ">= :catalina"
+  depends_on :macos
 
   app "UmamiBar.app"
 

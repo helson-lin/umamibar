@@ -16,6 +16,14 @@ class CaskTests(unittest.TestCase):
         self.assertIn('app "UmamiBar.app"', text)
         self.assertNotIn("sha256 :no_check", text)
 
+    def test_macos_dependency_avoids_disabled_legacy_versions(self):
+        generated = cask.render("helson-lin/umamibar", "1.2.3", "a" * 64)
+        published = (Path(__file__).resolve().parents[1] / "Casks/umamibar.rb").read_text()
+        for text in (generated, published):
+            self.assertIn("depends_on :macos", text)
+            self.assertNotIn("catalina", text)
+            self.assertNotIn("depends_on macos:", text)
+
     def test_notarized_release_notice(self):
         text = cask.render("helson-lin/umamibar", "1.2.3", "a" * 64, notarized=True)
         self.assertIn("Developer ID signed and notarized by Apple", text)

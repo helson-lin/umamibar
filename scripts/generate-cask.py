@@ -24,7 +24,7 @@ def render(repository: str, version: str, digest: str, notarized: bool = False) 
   desc "Native Umami analytics for your macOS menu bar"
   homepage "https://github.com/{repository}"
 
-  depends_on macos: ">= :catalina"
+  depends_on :macos
 
   app "UmamiBar.app"
 
