@@ -115,6 +115,9 @@ final class MainController: NSViewController {
     private var previousVisitors: [String: Int] = [:]
     private var detailID: String?
     private var breakdown = "pages"
+    private var dimension: DetailDimension = .pages
+    private var utmDimension: DetailDimension = .utmSource
+    private var locationDimension: DetailDimension = .country
     private var detailRows: [MetricRow]?
     private var detailError: String?
     private var detailLoading = false
@@ -162,8 +165,18 @@ final class MainController: NSViewController {
         case "back": if !sites.isEmpty { detailTask?.cancel(); detailToken = UUID(); detailID = nil; screen = "overview"; publish(); refreshIfNeeded() }
         case "detail":
             guard let id = body["id"] as? String, sites.contains(where: { $0.id == id }) else { return }
-            detailID = id; screen = "detail"; breakdown = "pages"; detailRows = nil; publish(); loadBreakdown()
-        case "breakdown": breakdown = body["value"] as? String == "sources" ? "sources" : "pages"; loadBreakdown()
+            detailID = id; screen = "detail"; breakdown = "pages"; dimension = .pages; detailRows = nil; publish(); loadBreakdown()
+        case "breakdown":
+            guard let value = body["value"] as? String, ["pages", "sources", "utm", "location"].contains(value) else { return }
+            breakdown = value
+            dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : .pages
+            loadBreakdown()
+        case "dimension":
+            guard let raw = body["value"] as? String, let value = DetailDimension(rawValue: raw), value.category == breakdown else { return }
+            dimension = value
+            if breakdown == "utm" { utmDimension = value }
+            if breakdown == "location" { locationDimension = value }
+            loadBreakdown()
         case "detailRetry": loadBreakdown()
         case "refresh": refresh()
         case "period":
@@ -194,7 +207,7 @@ final class MainController: NSViewController {
         let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: end), end: end, updated: updated, sites: sites.map { site in
             let data = cache[site.id]
             return PanelSite(website: site, total: statistics[site.id]?.visitors ?? data?.0, points: data?.1, error: errors[site.id], stats: statistics[site.id], previousVisitors: previousVisitors[site.id], color: colors[site.id] ?? 0)
-        }, detailID: detailID, breakdown: breakdown, rows: detailRows, detailLoading: detailLoading, detailError: detailError)
+        }, detailID: detailID, breakdown: breakdown, dimension: dimension, rows: detailRows, detailLoading: detailLoading, detailError: detailError)
         let desiredHeight: CGFloat = screen == "empty" ? 206 : 640
         preferredContentSize = NSSize(width: 360, height: min(desiredHeight, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
         panel.render(state)
@@ -263,7 +276,7 @@ final class MainController: NSViewController {
         guard let connection = connection, let id = detailID, screen == "detail" else { return }
         detailTask?.cancel(); let token = UUID(); detailToken = token
         detailLoading = true; detailRows = nil; detailError = nil; publish()
-        let query = period.query(end: end) + [URLQueryItem(name: "type", value: breakdown == "pages" ? "path" : "referrer"), URLQueryItem(name: "limit", value: "5")]
+        let query = period.query(end: end) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: "5")]
         detailTask = api.get([MetricRow].self, connection: connection, path: "websites/\(id)/metrics", query: query) { [weak self] result in
             guard let self = self, self.detailToken == token, self.detailID == id, self.screen == "detail" else { return }
             self.detailLoading = false

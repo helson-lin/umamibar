@@ -82,6 +82,49 @@ struct MetricRow: Decodable {
     let x: String?
     let y: Double
 }
+enum DetailDimension: String, CaseIterable {
+    case pages = "path", sources = "referrer"
+    case utmSource, utmMedium, utmCampaign, utmTerm, utmContent
+    case country, region, city
+
+    var category: String {
+        switch self {
+        case .pages: return "pages"
+        case .sources: return "sources"
+        case .utmSource, .utmMedium, .utmCampaign, .utmTerm, .utmContent: return "utm"
+        case .country, .region, .city: return "location"
+        }
+    }
+    static func options(for category: String) -> [DetailDimension] {
+        allCases.filter { $0.category == category }
+    }
+    var title: String {
+        switch self {
+        case .pages: return L("页面路径")
+        case .sources: return L("来源")
+        case .utmSource: return L("来源") + " · utm_source"
+        case .utmMedium: return L("媒介") + " · utm_medium"
+        case .utmCampaign: return L("活动") + " · utm_campaign"
+        case .utmTerm: return L("关键词") + " · utm_term"
+        case .utmContent: return L("内容") + " · utm_content"
+        case .country: return L("国家 / 地区")
+        case .region: return L("省份 / 州")
+        case .city: return L("城市")
+        }
+    }
+    func label(for value: String?, locale: Locale = .current) -> String {
+        guard let value = value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            switch self {
+            case .pages: return "/"
+            case .sources: return L("直接访问")
+            case .country, .region, .city: return L("未知位置")
+            default: return L("未设置")
+            }
+        }
+        if self == .country { return locale.localizedString(forRegionCode: value) ?? value }
+        return value
+    }
+}
 enum Period: Int, CaseIterable {
     case day, week, month
     var title: String { [L("最近 24 小时"), L("最近 7 天"), L("最近一个月")][rawValue] }

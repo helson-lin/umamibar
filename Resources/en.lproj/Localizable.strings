@@ -118,3 +118,18 @@
 "跟随系统" = "System";
 "语言" = "Language";
 "立即生效 · “跟随系统”使用 macOS 的语言设置" = "Applies immediately · “System” uses your macOS language";
+
+"位置" = "Location";
+"媒介" = "Medium";
+"活动" = "Campaign";
+"关键词" = "Term";
+"内容" = "Content";
+"国家 / 地区" = "Country / Region";
+"省份 / 州" = "Region / State";
+"城市" = "City";
+"未知位置" = "Unknown location";
+"未设置" = "Not set";
+"UTM 字段" = "UTM field";
+"位置维度" = "Location dimension";
+"未携带字段显示「未设置」· 占比按前 5 项计算" = "Missing fields: Not set · Share of top 5";
+"缺失位置显示「未知位置」· 占比按前 5 项计算" = "Missing locations: Unknown · Share of top 5";
