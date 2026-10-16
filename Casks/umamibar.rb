@@ -1,6 +1,6 @@
 cask "umamibar" do
-  version "0.1.0"
-  sha256 "759f928ebff076f74fab693154e3a07e7a11cf5e1d68c9cd0d0d7a5c4b33ba81"
+  version "0.1.1"
+  sha256 "20329054e585cee30038dca3eea75111a1fa6dc12027ed9b2ae13caf7c4e06f4"
 
   url "https://github.com/helson-lin/umamibar/releases/download/v#{version}/UmamiBar-#{version}-universal.zip"
   name "UmamiBar"
@@ -14,7 +14,7 @@ cask "umamibar" do
   zap trash: "~/Library/Preferences/app.umamibar.plist"
 
   caveats <<~EOS
-    This development build is ad-hoc signed and is not notarized by Apple.
+    This release is Developer ID signed and notarized by Apple.
     macOS may prevent it from opening. No security settings are changed by this cask.
     Removing preferences does not delete the API key stored in macOS Keychain.
   EOS
