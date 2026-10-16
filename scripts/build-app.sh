@@ -13,14 +13,20 @@ BUILD="${TMPDIR:-/tmp}/umamibar-release"
 rm -rf "$ROOT/dist/UmamiBar.app"
 mkdir -p "$ROOT/dist/UmamiBar.app/Contents/MacOS" "$BUILD"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
+swift package resolve --scratch-path "$BUILD/spm-intel"
+FRAMEWORK="$(find "$BUILD/spm-intel/artifacts" -path '*/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework' -print -quit)"
+if [[ -z "$FRAMEWORK" ]]; then echo 'Sparkle universal framework not found' >&2; exit 1; fi
+FRAMEWORKS="$(dirname "$FRAMEWORK")"
 SOURCES=(Sources/UmamiBar/*.swift)
 if [[ "$MODE" == "universal" ]]; then
-  xcrun swiftc -O -parse-as-library -swift-version 5 -sdk "$SDK" -module-cache-path /tmp/umamibar-module-cache -target x86_64-apple-macosx10.15 "${SOURCES[@]}" -o "$BUILD/UmamiBar-intel"
-  xcrun swiftc -O -parse-as-library -swift-version 5 -sdk "$SDK" -module-cache-path /tmp/umamibar-module-cache -target arm64-apple-macosx11.0 "${SOURCES[@]}" -o "$BUILD/UmamiBar-arm"
+  xcrun swiftc -O -parse-as-library -swift-version 5 -sdk "$SDK" -module-cache-path /tmp/umamibar-module-cache -target x86_64-apple-macosx10.15 -F "$FRAMEWORKS" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks "${SOURCES[@]}" -o "$BUILD/UmamiBar-intel"
+  xcrun swiftc -O -parse-as-library -swift-version 5 -sdk "$SDK" -module-cache-path /tmp/umamibar-module-cache -target arm64-apple-macosx11.0 -F "$FRAMEWORKS" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks "${SOURCES[@]}" -o "$BUILD/UmamiBar-arm"
   lipo -create "$BUILD/UmamiBar-intel" "$BUILD/UmamiBar-arm" -output "$ROOT/dist/UmamiBar.app/Contents/MacOS/UmamiBar"
 else
-  xcrun swiftc -O -parse-as-library -swift-version 5 -sdk "$SDK" -module-cache-path /tmp/umamibar-module-cache "${SOURCES[@]}" -o "$ROOT/dist/UmamiBar.app/Contents/MacOS/UmamiBar"
+  xcrun swiftc -O -parse-as-library -swift-version 5 -sdk "$SDK" -module-cache-path /tmp/umamibar-module-cache -F "$FRAMEWORKS" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks "${SOURCES[@]}" -o "$ROOT/dist/UmamiBar.app/Contents/MacOS/UmamiBar"
 fi
+mkdir -p "$ROOT/dist/UmamiBar.app/Contents/Frameworks"
+ditto "$FRAMEWORK" "$ROOT/dist/UmamiBar.app/Contents/Frameworks/Sparkle.framework"
 cat > "$ROOT/dist/UmamiBar.app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -34,6 +40,9 @@ cat > "$ROOT/dist/UmamiBar.app/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
+<key>SUFeedURL</key><string>https://github.com/helson-lin/umamibar/releases/latest/download/appcast.xml</string>
+<key>SUPublicEDKey</key><string>d6VHVI8j8qrQibYdB+lxP0wrjoI0K3PcIcHyW6kpCME=</string>
+<key>SUEnableAutomaticChecks</key><true/>
 <key>LSMinimumSystemVersion</key><string>10.15</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
@@ -47,9 +56,9 @@ cp assets/AppIcon.icns "$ROOT/dist/UmamiBar.app/Contents/Resources/AppIcon.icns"
 # UI strings: the app follows the system (or per-app) language; anything but Chinese falls back to English.
 cp -R Resources/en.lproj Resources/zh-Hans.lproj "$ROOT/dist/UmamiBar.app/Contents/Resources/"
 if [[ "${SIGNING_IDENTITY:--}" == "-" ]]; then
-  codesign --force --sign - "$ROOT/dist/UmamiBar.app"
+  codesign --force --deep --sign - "$ROOT/dist/UmamiBar.app"
 else
-  SIGNING_ARGS=(--force --options runtime --timestamp --sign "$SIGNING_IDENTITY")
+  SIGNING_ARGS=(--force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY")
   if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then SIGNING_ARGS+=(--keychain "$SIGNING_KEYCHAIN"); fi
   codesign "${SIGNING_ARGS[@]}" "$ROOT/dist/UmamiBar.app"
 fi

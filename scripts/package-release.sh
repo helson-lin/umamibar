@@ -39,4 +39,15 @@ if [[ "${NOTARIZE:-0}" == "1" ]]; then
 fi
 hdiutil verify "dist/$DMG"
 (cd dist && shasum -a 256 "$ARCHIVE" "$DMG" > SHA256SUMS)
+if [[ -n "${RELEASE_TAG:-}" ]]; then
+  : "${RELEASE_REPOSITORY:?RELEASE_REPOSITORY is required when generating a release appcast}"
+  : "${SPARKLE_EDDSA_PRIVATE_KEY:?SPARKLE_EDDSA_PRIVATE_KEY is required to sign update archives}"
+  TOOL="$(find "${TMPDIR:-/tmp}/umamibar-release/spm-intel/artifacts" -path '*/Sparkle/bin/generate_appcast' -print -quit)"
+  if [[ -z "$TOOL" ]]; then echo 'Sparkle generate_appcast tool not found' >&2; exit 1; fi
+  rm -rf dist/updates dist/appcast.xml
+  mkdir -p dist/updates
+  cp "dist/$ARCHIVE" dist/updates/
+  printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" | "$TOOL" --ed-key-file - --maximum-deltas 0 --download-url-prefix "https://github.com/$RELEASE_REPOSITORY/releases/download/$RELEASE_TAG/" dist/updates
+  cp dist/updates/appcast.xml dist/appcast.xml
+fi
 echo "Packaged dist/$ARCHIVE and dist/$DMG"

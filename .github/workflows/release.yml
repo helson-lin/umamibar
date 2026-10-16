@@ -73,6 +73,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           NOTARY_PROFILE: umamibar-release
           NOTARIZE: '1'
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           ./scripts/build-app.sh
@@ -85,20 +88,13 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/umamibar-signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/umamibar-signing.p12"
-      - name: Verify archive and render Cask
-        env:
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          (cd dist && shasum -a 256 -c SHA256SUMS)
-          python3 scripts/generate-cask.py --repository "$REPOSITORY" --version "$(cat VERSION)" --archive "dist/UmamiBar-$(cat VERSION)-universal.zip" --notarized
-          ruby -c dist/umamibar.rb
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" "dist/UmamiBar-$(cat VERSION)-universal.dmg" "dist/UmamiBar-$(cat VERSION)-universal.zip" dist/SHA256SUMS dist/umamibar.rb --verify-tag --title "UmamiBar $TAG" --generate-notes
+          gh release create "$TAG" "dist/UmamiBar-$(cat VERSION)-universal.dmg" "dist/UmamiBar-$(cat VERSION)-universal.zip" dist/SHA256SUMS dist/umamibar.rb dist/appcast.xml --verify-tag --title "UmamiBar $TAG" --generate-notes
   homebrew:
     needs: publish
     runs-on: ubuntu-latest

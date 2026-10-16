@@ -8,6 +8,7 @@ final class SettingsWindowController: NSWindowController {
         var title: String { [L("连接"), L("网站"), L("通用")][rawValue] }
     }
     /// Persists the verified connection and selected websites; throws if the key cannot be stored.
+    var onCheckForUpdates: (() -> Void)?
     var onSave: ((Connection, [Website], [String: Int]) throws -> Void)?
     private let api = API()
     private let panel = SettingsPanel()
@@ -114,7 +115,7 @@ final class SettingsWindowController: NSWindowController {
                 let b = button([L("跟随系统"), "简体中文", "English"][i], NSRect(x: 23 + CGFloat(i) * 132, y: top + 23, width: 131, height: 29), style: .segment) { Localization.set(code) }
                 b.selected = Localization.choice == code; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
             }
-            // Same height as 保存并查看 on the websites tab, so each tab's main action sits in one place.
+            _ = button(L("检查更新…"), NSRect(x: 20, y: top + 210, width: 400, height: 36), style: .primary) { [weak self] in self?.onCheckForUpdates?() }
             _ = button(L("退出 UmamiBar"), NSRect(x: 20, y: top + 256, width: 400, height: 36), style: .destructive) { NSApp.terminate(nil) }
         }
         updateState()

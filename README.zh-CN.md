@@ -77,7 +77,7 @@
 | 构建工具 | 包含 macOS SDK 的 Xcode，Swift 5.9 及以上 |
 | Umami | 支持 Bearer API Key 认证的部署 |
 
-默认构建包含 Intel 和 Apple Silicon 的通用二进制。已核对产物的最低系统版本，但 **Catalina 真机验证尚未完成**。项目没有第三方包依赖。
+应用使用 Sparkle 2 自动检查更新，也可在“设置 → 通用 → 检查更新”手动检查。正式标签 Release 经过签名和公证，支持应用内升级；ad-hoc 签名的 CI 构建不支持应用内更新。Sparkle 是项目唯一的第三方 Swift 包依赖。
 
 
 ## Homebrew 安装
@@ -89,15 +89,15 @@ brew tap helson-lin/umamibar https://github.com/helson-lin/umamibar
 brew install --cask helson-lin/umamibar/umamibar
 ```
 
-升级：`brew update`，然后 `brew upgrade --cask helson-lin/umamibar/umamibar`。目前为 ad-hoc 签名，未公证，macOS 可能阻止打开。Homebrew 自身对旧版 macOS 的支持与应用最低系统版本不同；旧系统可直接使用 Release ZIP。
+升级：`brew update`，然后 `brew upgrade --cask helson-lin/umamibar/umamibar`。Homebrew 自身对旧版 macOS 的支持与应用最低系统版本不同；旧系统可直接使用 Release ZIP。
 
-从 [Releases](https://github.com/helson-lin/umamibar/releases/latest) 下载通用版 **DMG**，双击打开，将 **UmamiBar.app** 拖到 **Applications（应用程序）**，推出磁盘映像后从“应用程序”启动。支持 Intel 和 Apple Silicon；当前仍为 ad-hoc 签名、未公证，macOS 可能阻止打开。
+从 [Releases](https://github.com/helson-lin/umamibar/releases/latest) 下载通用版 **DMG**，打开后将 **UmamiBar.app** 拖到“应用程序”，推出磁盘映像后启动。正式签名版本支持 Sparkle 自动检查更新，也可在“设置 → 通用 → 检查更新”手动检查。Homebrew 用户使用上述命令升级。
 
 CI 在每次分支推送、PR 和手动运行时，在 Intel 和 Apple Silicon 上测试并打包通用应用。无需打标签：打开 [Actions → CI](https://github.com/helson-lin/umamibar/actions/workflows/ci.yml)，选择成功的运行，从摘要下载 `UmamiBar-macos-15` 或 `UmamiBar-macos-15-intel` 产物（两者均包含通用应用，保留 14 天，下载需登录 GitHub）。解压产物后，再解压其中的 `UmamiBar-<版本>-universal.zip`，将 `UmamiBar.app` 移至“应用程序”。手动打包可选择 **Run workflow** 和目标分支。
 
-推送与 `VERSION` 一致的 `vX.Y.Z` 标签，将自动发布 DMG、ZIP、SHA-256 校验文件和 Homebrew Cask，再创建更新 PR。设置与发布步骤见 [RELEASING.md](docs/RELEASING.md)。
+推送与 `VERSION` 一致的 `vX.Y.Z` 标签，将自动发布 DMG、ZIP、SHA-256 校验文件、已签名的 Sparkle appcast 和 Homebrew Cask，再创建更新 PR。设置与发布步骤见 [RELEASING.md](docs/RELEASING.md)。
 
-标签发布现已要求 Developer ID 签名与 Apple 公证凭据，配置见[发布文档](docs/RELEASING.md#developer-id-signing-and-notarization)。普通 CI 产物仍为 ad-hoc 签名、未公证；已有 Release 不受此改动影响。
+标签发布要求 Developer ID 签名、Apple 公证和 `SPARKLE_EDDSA_PRIVATE_KEY` Actions secret，详见[发布文档](docs/RELEASING.md#developer-id-signing-and-notarization)。普通 CI 产物仍为 ad-hoc 签名、未公证；已有 Release 不受此改动影响。
 
 ## 构建与运行
 
@@ -118,7 +118,7 @@ open dist/UmamiBar.app
 
 `native` 模式采用工具链的默认部署目标。验证旧系统最低版本时，请使用默认的 **universal** 构建。
 
-当前产物仅有本地 ad-hoc 签名，未使用 Developer ID 签名或公证；GitHub Actions 可发布 ZIP 安装包；应用内自动更新尚未实现。
+本地和普通 CI 构建为 ad-hoc 签名、未公证，不支持应用内更新；GitHub Actions 标签发布使用 Developer ID 签名、公证和 Sparkle 更新。
 
 重新构建后，应先退出正在运行的旧版（设置窗口 → 通用），再打开新应用。替换磁盘文件不会替换已经运行的进程。
 
@@ -284,7 +284,7 @@ python3 -m http.server 8765 --bind 127.0.0.1
 - **没有流量来源**：所选时段的来源接口可能合法返回空列表。
 - **没有看到团队网站**：网站发现使用 websites 接口，团队可见性取决于服务端返回的列表和权限。
 - **旧系统兼容性**：已验证 Intel 最低部署元数据为 10.15，但启动、钥匙串、外观和渲染仍待 Catalina 真机验证。
-- **发布能力**：尚未实现 Developer ID 签名、公证、自动更新和登录时启动设置。
+- **发布能力**：已实现 Developer ID 签名、公证和 Sparkle 应用内更新；登录时启动设置尚未实现。
 
 需求记录见 [PRD.md](PRD.md)。`docs/previews/` 中的图片使用示例数据，可能滞后于小幅视觉调整。
 

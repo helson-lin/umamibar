@@ -75,7 +75,7 @@ Sample data.
 | Build tools | Xcode with a macOS SDK and Swift 5.9 or later |
 | Umami | A deployment supporting Bearer API key authentication |
 
-The default build produces a universal binary containing both Intel and Apple Silicon architectures. Deployment targets have been checked in the binary; **Catalina hardware testing is still pending**. No third-party package dependencies are required.
+The app uses Sparkle 2 for automatic update checks and manual checks in **Settings → General → Check for Updates**. In-app updates use signed, notarized tagged releases; CI builds are ad-hoc signed and are not updateable. Sparkle is the sole third-party Swift package dependency.
 
 
 ## Homebrew installation
@@ -87,15 +87,15 @@ brew tap helson-lin/umamibar https://github.com/helson-lin/umamibar
 brew install --cask helson-lin/umamibar/umamibar
 ```
 
-Upgrade with `brew update`, then `brew upgrade --cask helson-lin/umamibar/umamibar`. Current builds are ad-hoc signed and not notarized; macOS may block opening. Homebrew's own legacy macOS support is separate from the app's deployment target. Older Macs can use the release ZIP directly.
+Upgrade with `brew update`, then `brew upgrade --cask helson-lin/umamibar/umamibar`. Homebrew's own legacy macOS support is separate from the app's deployment target. Older Macs can use the release ZIP directly.
 
-Download the universal **DMG** from [Releases](https://github.com/helson-lin/umamibar/releases/latest), open it, and drag **UmamiBar.app** to **Applications**. Eject the disk image, then launch from Applications. Supports Intel and Apple Silicon; current builds are ad-hoc signed and not notarized, so macOS may block opening.
+Download the universal **DMG** from [Releases](https://github.com/helson-lin/umamibar/releases/latest), open it, and drag **UmamiBar.app** to **Applications**. Eject the disk image, then launch from Applications. Signed release builds support automatic Sparkle checks and manual checks in **Settings → General → Check for Updates**. Homebrew users update with the command above.
 
 CI tests and packages the universal app on Intel and Apple Silicon for every branch push, pull request, and manual run. No tag is needed: open [Actions → CI](https://github.com/helson-lin/umamibar/actions/workflows/ci.yml), select a successful run, and download either `UmamiBar-macos-15` or `UmamiBar-macos-15-intel` from the summary (both contain a universal app; retained for 14 days; GitHub sign-in required). Extract the artifact, unzip the inner `UmamiBar-<version>-universal.zip`, and move `UmamiBar.app` to Applications. To package manually, select **Run workflow** and the desired branch.
 
-Push a `vX.Y.Z` tag matching `VERSION` to publish the DMG, ZIP, SHA-256 checksums, and generated Cask, then open a Cask update PR. See [RELEASING.md](docs/RELEASING.md) for setup and release instructions.
+Push a `vX.Y.Z` tag matching `VERSION` to publish the DMG, ZIP, SHA-256 checksums, signed Sparkle appcast, and generated Cask, then open a Cask update PR. See [RELEASING.md](docs/RELEASING.md) for setup and release instructions.
 
-Tagged releases require Developer ID signing and Apple notarization credentials; see [release setup](docs/RELEASING.md#developer-id-signing-and-notarization). Ordinary CI builds remain ad-hoc signed and unnotarized. Existing releases are unchanged.
+Tagged releases require Developer ID signing, Apple notarization, and the `SPARKLE_EDDSA_PRIVATE_KEY` Actions secret; see [release setup](docs/RELEASING.md#developer-id-signing-and-notarization). Ordinary CI builds remain ad-hoc signed and unnotarized. Existing releases are unchanged.
 
 ## Build and run
 

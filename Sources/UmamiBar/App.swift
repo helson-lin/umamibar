@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 
 @main
 struct UmamiBarMain {
@@ -18,8 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
     private var controller: MainController!
     private let settings = SettingsWindowController()
+    private var updater: SPUStandardUpdaterController!
     private var timer: Timer?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        settings.onCheckForUpdates = { [weak self] in self?.updater.checkForUpdates(nil) }
         NSApp.mainMenu = Self.editMenu()
         NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { _ in NSApp.mainMenu = Self.editMenu() }
         controller = MainController()

@@ -3,7 +3,7 @@
 ## Pipelines
 
 - **CI** runs on branch pushes, pull requests, manual dispatch, and as a reusable release prerequisite. Swift tests and universal packaging run on Apple Silicon (`macos-15`) and Intel (`macos-15-intel`). Artifacts are retained for 14 days.
-- **Release** runs for stable tags such as `v0.1.0`. The tag must match `VERSION`. After CI passes, it publishes a universal DMG, ZIP, `SHA256SUMS`, and a generated `umamibar.rb` Cask.
+- **Release** runs for stable tags such as `v0.1.0`. The tag must match `VERSION`. After CI passes, it publishes a universal DMG, ZIP, `SHA256SUMS`, generated Cask, and a Sparkle `appcast.xml` for in-app updates.
 - **Homebrew update** opens a PR adding/updating `Casks/umamibar.rb` on the default branch, with the exact release URL and archive SHA-256. Merge the PR to update the tap. No checksum placeholder is used.
 - **Dependabot** proposes weekly updates to GitHub Actions; actions are pinned by commit SHA.
 
@@ -40,7 +40,7 @@ git push origin v0.1.0
 
 The commands above illustrate the first release. Skip the version commit if that version is already committed. For the next release, use `0.1.1` / `v0.1.1` consistently. Never move a published version tag or change an existing release archive; publish a new version instead.
 
-`CFBundleShortVersionString` comes from `VERSION`; `CFBundleVersion` comes from the Actions run number (local builds default to `1`). The app ZIP preserves the bundle structure and signature using `ditto`.
+`CFBundleShortVersionString` comes from `VERSION`; `CFBundleVersion` comes from the Actions run number (local builds default to `1`). The app ZIP preserves the bundle structure and signature using `ditto`. Sparkle updates use the signed release ZIP and an appcast attached to each release; the stable feed URL points to the latest release's `appcast.xml`.
 
 After the release workflow finishes, review and merge the Homebrew update PR. GitHub may suppress new workflow runs for PRs created using `GITHUB_TOKEN`; run CI manually if branch rules require a fresh check on that automation PR.
 
@@ -90,8 +90,9 @@ Configure these repository Actions secrets (never commit the files or credential
 | `APPLE_ID` | Apple developer account email |
 | `APPLE_TEAM_ID` | Developer team ID matching the certificate |
 | `APPLE_APP_PASSWORD` | Apple ID app-specific password for notarization |
+| `SPARKLE_EDDSA_PRIVATE_KEY` | Base64 private key exported using Sparkle's `generate_keys -x`; set with `gh secret set SPARKLE_EDDSA_PRIVATE_KEY < private-key-file`. Keep the matching public key in the app's `SUPublicEDKey` Info.plist entry; never commit the private key. |
 
-The release job imports the identity into a temporary keychain, enables Hardened Runtime and secure timestamps, and checks the certificate's team. It submits the app ZIP with `notarytool`, requires `Accepted`, staples and validates the app ticket, then creates the final ZIP and DMG. It signs, notarizes, and staples the DMG too. Gatekeeper assessments must pass before checksums and publication. Credentials are deleted with an `always()` cleanup step. Missing secrets or failed notarization stop the release; there is no ad-hoc fallback for public releases.
+The release job imports the identity into a temporary keychain, enables Hardened Runtime and secure timestamps, and checks the certificate's team. It submits the app ZIP with `notarytool`, requires `Accepted`, staples and validates the app ticket, then creates the final ZIP and DMG. It signs, notarizes, and staples the DMG too. Sparkle's `generate_appcast` signs the update archive with EdDSA before publication; downloaded updates are validated against the embedded public key and Apple code signature. Gatekeeper assessments must pass before checksums and publication. Credentials are deleted with an `always()` cleanup step. Missing secrets or failed notarization stop the release; there is no ad-hoc fallback for public releases.
 
 Ordinary CI and local builds remain ad-hoc signed and unnotarized by default. For a local notarized build, import the Developer ID certificate and store credentials with `xcrun notarytool store-credentials umamibar-release`. Export `SIGNING_IDENTITY` and `NOTARY_PROFILE=umamibar-release`, build the app, then run packaging with `NOTARIZE=1` and the `DMG_PYTHON` below. If using a custom keychain, export its path as `SIGNING_KEYCHAIN` and add it to your keychain search list first.
 
