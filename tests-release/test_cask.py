@@ -16,6 +16,11 @@ class CaskTests(unittest.TestCase):
         self.assertIn('app "UmamiBar.app"', text)
         self.assertNotIn("sha256 :no_check", text)
 
+    def test_notarized_release_notice(self):
+        text = cask.render("helson-lin/umamibar", "1.2.3", "a" * 64, notarized=True)
+        self.assertIn("Developer ID signed and notarized by Apple", text)
+        self.assertNotIn("ad-hoc signed", text)
+
     def test_invalid_release_metadata(self):
         for repo, version, checksum in [("bad", "1.0.0", "a" * 64), ("owner/repo", "v1.0.0", "a" * 64), ("owner/repo", "1.0.0", "missing")]:
             with self.assertRaises(ValueError):

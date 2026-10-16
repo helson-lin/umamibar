@@ -81,7 +81,13 @@ brew install --cask helson-lin/umamibar/umamibar
 
 升级：`brew update`，然后 `brew upgrade --cask helson-lin/umamibar/umamibar`。目前为 ad-hoc 签名，未公证，macOS 可能阻止打开。Homebrew 自身对旧版 macOS 的支持与应用最低系统版本不同；旧系统可直接使用 Release ZIP。
 
-CI 在 Intel 和 Apple Silicon 上测试并构建通用应用。推送与 `VERSION` 一致的 `vX.Y.Z` 标签，将自动发布 ZIP、SHA-256 校验文件和 Homebrew Cask，再创建更新 PR。设置与发布步骤见 [RELEASING.md](docs/RELEASING.md)。
+从 [Releases](https://github.com/helson-lin/umamibar/releases/latest) 下载通用版 **DMG**，双击打开，将 **UmamiBar.app** 拖到 **Applications（应用程序）**，推出磁盘映像后从“应用程序”启动。支持 Intel 和 Apple Silicon；当前仍为 ad-hoc 签名、未公证，macOS 可能阻止打开。
+
+CI 在每次分支推送、PR 和手动运行时，在 Intel 和 Apple Silicon 上测试并打包通用应用。无需打标签：打开 [Actions → CI](https://github.com/helson-lin/umamibar/actions/workflows/ci.yml)，选择成功的运行，从摘要下载 `UmamiBar-macos-15` 或 `UmamiBar-macos-15-intel` 产物（两者均包含通用应用，保留 14 天，下载需登录 GitHub）。解压产物后，再解压其中的 `UmamiBar-<版本>-universal.zip`，将 `UmamiBar.app` 移至“应用程序”。手动打包可选择 **Run workflow** 和目标分支。
+
+推送与 `VERSION` 一致的 `vX.Y.Z` 标签，将自动发布 DMG、ZIP、SHA-256 校验文件和 Homebrew Cask，再创建更新 PR。设置与发布步骤见 [RELEASING.md](docs/RELEASING.md)。
+
+标签发布现已要求 Developer ID 签名与 Apple 公证凭据，配置见[发布文档](docs/RELEASING.md#developer-id-signing-and-notarization)。普通 CI 产物仍为 ad-hoc 签名、未公证；已有 Release 不受此改动影响。
 
 ## 构建与运行
 

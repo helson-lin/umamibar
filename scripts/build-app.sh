@@ -45,5 +45,9 @@ mkdir -p "$ROOT/dist/UmamiBar.app/Contents/Resources"
 cp assets/AppIcon.icns "$ROOT/dist/UmamiBar.app/Contents/Resources/AppIcon.icns"
 # UI strings: the app follows the system (or per-app) language; anything but Chinese falls back to English.
 cp -R Resources/en.lproj Resources/zh-Hans.lproj "$ROOT/dist/UmamiBar.app/Contents/Resources/"
-codesign --force --deep --sign - "$ROOT/dist/UmamiBar.app"
+if [[ "${SIGNING_IDENTITY:--}" == "-" ]]; then
+  codesign --force --sign - "$ROOT/dist/UmamiBar.app"
+else
+  codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$ROOT/dist/UmamiBar.app"
+fi
 echo "Built: $ROOT/dist/UmamiBar.app"

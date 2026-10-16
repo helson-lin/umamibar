@@ -79,7 +79,13 @@ brew install --cask helson-lin/umamibar/umamibar
 
 Upgrade with `brew update`, then `brew upgrade --cask helson-lin/umamibar/umamibar`. Current builds are ad-hoc signed and not notarized; macOS may block opening. Homebrew's own legacy macOS support is separate from the app's deployment target. Older Macs can use the release ZIP directly.
 
-CI tests and builds the universal app on Intel and Apple Silicon. Push a `vX.Y.Z` tag matching `VERSION` to publish the ZIP, SHA-256 checksums, and generated Cask, then open a Cask update PR. See [RELEASING.md](docs/RELEASING.md) for setup and release instructions.
+Download the universal **DMG** from [Releases](https://github.com/helson-lin/umamibar/releases/latest), open it, and drag **UmamiBar.app** to **Applications**. Eject the disk image, then launch from Applications. Supports Intel and Apple Silicon; current builds are ad-hoc signed and not notarized, so macOS may block opening.
+
+CI tests and packages the universal app on Intel and Apple Silicon for every branch push, pull request, and manual run. No tag is needed: open [Actions → CI](https://github.com/helson-lin/umamibar/actions/workflows/ci.yml), select a successful run, and download either `UmamiBar-macos-15` or `UmamiBar-macos-15-intel` from the summary (both contain a universal app; retained for 14 days; GitHub sign-in required). Extract the artifact, unzip the inner `UmamiBar-<version>-universal.zip`, and move `UmamiBar.app` to Applications. To package manually, select **Run workflow** and the desired branch.
+
+Push a `vX.Y.Z` tag matching `VERSION` to publish the DMG, ZIP, SHA-256 checksums, and generated Cask, then open a Cask update PR. See [RELEASING.md](docs/RELEASING.md) for setup and release instructions.
+
+Tagged releases require Developer ID signing and Apple notarization credentials; see [release setup](docs/RELEASING.md#developer-id-signing-and-notarization). Ordinary CI builds remain ad-hoc signed and unnotarized. Existing releases are unchanged.
 
 ## Build and run
 

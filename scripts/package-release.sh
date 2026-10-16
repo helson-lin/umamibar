@@ -2,9 +2,36 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ./scripts/verify-app.sh
+DMG_PYTHON="${DMG_PYTHON:-python3}"
+if ! "$DMG_PYTHON" -c 'import dmgbuild' 2>/dev/null; then
+  echo 'Install DMG tooling: python3 -m venv /tmp/umamibar-dmg-tools && /tmp/umamibar-dmg-tools/bin/pip install -r scripts/requirements-dmg.txt' >&2
+  echo 'Then run with DMG_PYTHON=/tmp/umamibar-dmg-tools/bin/python' >&2
+  exit 1
+fi
 VERSION="$(cat VERSION)"
 ARCHIVE="UmamiBar-${VERSION}-universal.zip"
+DMG="UmamiBar-${VERSION}-universal.dmg"
+if [[ "${NOTARIZE:-0}" == "1" ]]; then
+  : "${SIGNING_IDENTITY:?Developer ID Application signing identity required}"
+  : "${NOTARY_PROFILE:?Notarytool keychain profile required}"
+  if [[ "$SIGNING_IDENTITY" == "-" ]]; then echo 'Notarization requires Developer ID signing' >&2; exit 1; fi
+  codesign --verify --strict --deep -R 'anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' dist/UmamiBar.app
+  # Notarize and staple the app before creating either distribution container.
+  ditto -c -k --keepParent --norsrc dist/UmamiBar.app dist/notary-app.zip
+  ./scripts/notarize.sh dist/notary-app.zip dist/UmamiBar.app
+  rm dist/notary-app.zip
+  spctl --assess --type execute --verbose=2 dist/UmamiBar.app
+fi
 # Keep the app bundle and signature intact; avoid Finder resource files.
 ditto -c -k --keepParent --norsrc dist/UmamiBar.app "dist/$ARCHIVE"
-(cd dist && shasum -a 256 "$ARCHIVE" > SHA256SUMS)
-echo "Packaged dist/$ARCHIVE"
+# dmgbuild writes Finder metadata without requiring a GUI session in CI.
+"$DMG_PYTHON" -m dmgbuild -s scripts/dmg-settings.py "UmamiBar $VERSION" "dist/$DMG"
+if [[ "${NOTARIZE:-0}" == "1" ]]; then
+  codesign --force --timestamp --sign "$SIGNING_IDENTITY" "dist/$DMG"
+  codesign --verify --strict "dist/$DMG"
+  ./scripts/notarize.sh "dist/$DMG" "dist/$DMG"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "dist/$DMG"
+fi
+hdiutil verify "dist/$DMG"
+(cd dist && shasum -a 256 "$ARCHIVE" "$DMG" > SHA256SUMS)
+echo "Packaged dist/$ARCHIVE and dist/$DMG"

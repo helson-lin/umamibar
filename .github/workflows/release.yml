@@ -31,23 +31,66 @@ jobs:
   publish:
     needs: ci
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: UmamiBar-macos-15
-          path: dist
+      - name: Import Developer ID and notarization credentials
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          for name in CERTIFICATE_BASE64 CERTIFICATE_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SIGNING_IDENTITY; do
+            if [[ -z "${!name}" ]]; then echo "::error::Missing release secret: $name"; exit 1; fi
+          done
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/umamibar-signing.keychain-db"
+          CERTIFICATE="$RUNNER_TEMP/umamibar-signing.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          python3 -c 'import base64,os,pathlib; pathlib.Path(os.environ["RUNNER_TEMP"], "umamibar-signing.p12").write_bytes(base64.b64decode(os.environ["CERTIFICATE_BASE64"], validate=True))'
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERTIFICATE" -P "$CERTIFICATE_PASSWORD" -k "$KEYCHAIN" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN"
+          rm -f "$CERTIFICATE"
+          xcrun notarytool store-credentials umamibar-release --keychain "$KEYCHAIN" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+      - name: Build, sign, notarize, and package
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_PROFILE: umamibar-release
+          NOTARIZE: '1'
+        run: |
+          set -euo pipefail
+          ./scripts/build-app.sh
+          codesign -dv --verbose=4 dist/UmamiBar.app 2>&1 | grep -Fx "TeamIdentifier=$APPLE_TEAM_ID"
+          python3 -m venv "$RUNNER_TEMP/dmg-tools"
+          "$RUNNER_TEMP/dmg-tools/bin/python" -m pip install -r scripts/requirements-dmg.txt
+          DMG_PYTHON="$RUNNER_TEMP/dmg-tools/bin/python" ./scripts/package-release.sh
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/umamibar-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/umamibar-signing.p12"
       - name: Verify archive and render Cask
         env:
           REPOSITORY: ${{ github.repository }}
         run: |
           (cd dist && shasum -a 256 -c SHA256SUMS)
-          python3 scripts/generate-cask.py --repository "$REPOSITORY" --version "$(cat VERSION)" --archive "dist/UmamiBar-$(cat VERSION)-universal.zip"
+          python3 scripts/generate-cask.py --repository "$REPOSITORY" --version "$(cat VERSION)" --archive "dist/UmamiBar-$(cat VERSION)-universal.zip" --notarized
           ruby -c dist/umamibar.rb
       - name: Publish GitHub Release
         env:
@@ -55,7 +98,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" "dist/UmamiBar-$(cat VERSION)-universal.zip" dist/SHA256SUMS dist/umamibar.rb --verify-tag --title "UmamiBar $TAG" --generate-notes
+          gh release create "$TAG" "dist/UmamiBar-$(cat VERSION)-universal.dmg" "dist/UmamiBar-$(cat VERSION)-universal.zip" dist/SHA256SUMS dist/umamibar.rb --verify-tag --title "UmamiBar $TAG" --generate-notes
   homebrew:
     needs: publish
     runs-on: ubuntu-latest
