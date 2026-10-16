@@ -18,7 +18,7 @@ if [[ "${NOTARIZE:-0}" == "1" ]]; then
   : "${SIGNING_IDENTITY:?Developer ID Application signing identity required}"
   : "${NOTARY_PROFILE:?Notarytool keychain profile required}"
   if [[ "$SIGNING_IDENTITY" == "-" ]]; then echo 'Notarization requires Developer ID signing' >&2; exit 1; fi
-  codesign --verify --strict --deep -R 'anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' dist/UmamiBar.app
+  codesign --verify --strict --deep -R '=anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' dist/UmamiBar.app
   # Notarize and staple the app before creating either distribution container.
   ditto -c -k --keepParent --norsrc dist/UmamiBar.app dist/notary-app.zip
   ./scripts/notarize.sh dist/notary-app.zip dist/UmamiBar.app
