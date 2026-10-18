@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UmamiBar · 日常使用偏好设计</title>
+<style>
+/* Shared native-preview tokens. The app keeps its macOS system typography. */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", sans-serif;
+  font-synthesis: none;
+  font-kerning: normal;
+  color-scheme: light;
+  --page: #f1f2ef;
+  --ink: #282c29;
+  --muted: #6a726b;
+  --surface: #fcfcfa;
+  --bottom: #f4f5f1;
+  --well: #e9ece6;
+  --line: #26362614;
+  --green: #07845c;
+  --green-wash: #07845c0c;
+  --orange: #bb681d;
+  --control: #ffffff;
+  --rim: #ffffffd9;
+  --shadow: 0 22px 42px #26362b16, 0 3px 9px #26362b0a;
+  --focus: #337fd4;
+  --notice: #f6ebd9;
+  --notice-ink: #815117;
+  --radius: 18px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --text-caption: .6875rem;
+  --text-secondary: .75rem;
+  --text-body: .8125rem;
+  --text-heading: .875rem;
+  --weight-label: 500;
+  --weight-heading: 600;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); }
+button, input, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; }
+button, select { touch-action: manipulation; }
+button:disabled { cursor: default; opacity: .4; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--focus); outline-offset: 3px;
+}
+button:not(:disabled):hover { filter: brightness(.97); }
+svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+[hidden] { display: none !important; }
+h1, h2, h3, p { margin: 0; }
+a { color: var(--green); }
+
+/* Review canvas: supporting chrome stays quieter than the two product surfaces. */
+.page { max-width: 1160px; margin: 0 auto; padding: var(--space-2xl) 36px 24px; }
+.top, .brand, .theme-control { display: flex; align-items: center; }
+.top { justify-content: space-between; gap: var(--space-xl); }
+.brand { gap: 10px; font-size: var(--text-body); font-weight: var(--weight-heading); }
+.brand .version { margin-left: var(--space-sm); border-left: 1px solid var(--line); padding-left: var(--space-lg); color: var(--muted); font-size: var(--text-caption); font-weight: 400; }
+.mark { display: inline-flex; gap: 3px; align-items: flex-end; height: 16px; color: inherit; }
+.mark i { display: block; width: 3px; border-radius: 2px; background: currentColor; }
+.mark i:nth-child(1) { height: 9px; }
+.mark i:nth-child(2) { height: 16px; }
+.mark i:nth-child(3) { height: 12px; }
+.theme-control { gap: var(--space-sm); color: var(--muted); font-size: var(--text-caption); }
+.theme-control button { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 7px; }
+.theme-control button[aria-pressed=true] { color: var(--ink); background: var(--control); border-color: var(--line); box-shadow: 0 1px 3px #00000008; }
+.intro { display: flex; align-items: end; justify-content: space-between; gap: var(--space-xl); margin: 28px 0 24px; }
+.intro h1 { font-size: 1.625rem; letter-spacing: -.035em; font-weight: var(--weight-heading); line-height: 1.25; }
+.intro p { font-size: var(--text-secondary); color: var(--muted); margin-top: var(--space-sm); line-height: 1.7; }
+.intro .scope { font-size: var(--text-caption); color: var(--muted); padding-bottom: 3px; white-space: nowrap; }
+.desk { border: 1px solid #ffffff90; border-radius: 14px; background: linear-gradient(145deg, #e2e7df, #d8e1d8); padding: 0 28px 24px; box-shadow: inset 0 1px 0 #ffffff80; }
+.menu { height: 34px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334d3920; font-size: var(--text-caption); margin: 0 -12px; color: #344139; }
+.menu-left, .menu-right { display: flex; align-items: center; gap: var(--space-lg); }
+.menu-left strong { font-weight: var(--weight-heading); }
+.apple { font-size: 16px; }
+.menu-right .system-icon { width: 14px; height: 14px; }
+.status-item { width: auto; min-width: 27px; padding: 0 7px; height: 27px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 5px; background: #ffffff65; font-size: var(--text-secondary); font-weight: var(--weight-label); position: relative; font-variant-numeric: tabular-nums; }
+.status-item.icon-only { width: 27px; padding: 0; }
+.status-item .mark { height: 13px; }
+.status-item .mark i:nth-child(1) { height: 7px; }
+.status-item .mark i:nth-child(2) { height: 13px; }
+.status-item .mark i:nth-child(3) { height: 10px; }
+.status-item.cached::after { content: ""; width: 4px; height: 4px; background: #a86a28; position: absolute; right: 6px; top: 6px; border-radius: 50%; }
+.workspaces { display: grid; grid-template-columns: 440px 360px; justify-content: center; align-items: start; gap: 48px; padding-top: var(--space-xl); }
+.frame-label { display: flex; align-items: center; justify-content: space-between; font-size: var(--text-caption); color: #536657; margin: 0 1px 12px; }
+.frame-label .num { opacity: .55; margin-right: var(--space-sm); font-variant-numeric: tabular-nums; }
+.frame-label .measure { font-size: .625rem; letter-spacing: .04em; opacity: .75; }
+
+/* Settings: one inset, one control axis, and compact native window chrome. */
+.settings-window { width: 440px; height: 640px; border: 1px solid var(--rim); border-radius: 12px; background: linear-gradient(145deg, var(--surface), var(--bottom)); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; position: relative; }
+.traffic { display: flex; gap: 7px; position: absolute; left: 16px; top: 18px; }
+.traffic i { width: 10px; height: 10px; border: 1px solid #00000012; border-radius: 50%; background: #fb625a; }
+.traffic i:nth-child(2) { background: #f6bd4f; }
+.traffic i:nth-child(3) { background: #34c65a; }
+.settings-title { padding: 15px 80px 16px; text-align: center; }
+.settings-title h2 { font-size: var(--text-secondary); line-height: 18px; font-weight: var(--weight-heading); }
+.settings-tabs { width: 256px; max-width: calc(100% - 48px); margin: 0 auto 20px; flex-shrink: 0; }
+.segmented { display: flex; background: var(--well); padding: 3px; border-radius: 8px; gap: 2px; }
+.segmented button { flex: 1; font-size: var(--text-secondary); line-height: 18px; padding: 5px 6px; border-radius: 5px; color: var(--muted); white-space: nowrap; }
+.segmented button[aria-selected=true] { background: var(--control); color: var(--ink); font-weight: var(--weight-label); box-shadow: 0 1px 4px #00000010, inset 0 1px 0 #ffffff25; }
+.settings-content { flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: #88888840 transparent; min-height: 0; border-top: 1px solid var(--line); }
+.pane { padding: 16px 24px 12px; }
+.hint { font-size: var(--text-caption); color: var(--muted); line-height: 1.6; margin-top: var(--space-xs); }
+.switch { width: 32px; height: 20px; border-radius: 10px; background: #c5cbc5; padding: 2px; flex-shrink: 0; position: relative; box-shadow: inset 0 0 0 1px #00000008; }
+.switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; box-shadow: 0 1px 2px #00000025; }
+.switch[aria-checked=true] { background: var(--green); }
+.switch[aria-checked=true]::before { left: 14px; }
+.select { border: 1px solid var(--line); border-radius: 6px; background: var(--control); font-size: var(--text-secondary); min-width: 176px; min-height: 29px; padding: 5px 9px; max-width: 100%; }
+.dot { width: 4px; height: 4px; border-radius: 50%; background: var(--green); display: inline-block; flex-shrink: 0; }
+.text-button { padding: 0; color: var(--muted); font-size: var(--text-caption); line-height: 18px; }
+.text-button:hover { color: var(--green); }
+.storage-details { margin-top: var(--space-sm); border-left: 2px solid var(--line); padding: 4px 10px; color: var(--muted); font-size: var(--text-caption); line-height: 1.9; font-variant-numeric: tabular-nums; }
+.storage-details strong { font-weight: var(--weight-label); color: var(--ink); }
+.inline-confirm { margin-top: var(--space-md); padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--control); font-size: var(--text-secondary); line-height: 1.7; }
+.inline-confirm p { color: var(--muted); font-size: var(--text-caption); margin-top: var(--space-xs); }
+.confirm-actions { display: flex; gap: var(--space-lg); justify-content: flex-end; margin-top: var(--space-md); }
+.danger { color: #b04a3c; }
+.notice { margin-top: var(--space-md); padding: 10px 12px; border-radius: 6px; background: var(--notice); color: var(--notice-ink); font-size: var(--text-caption); line-height: 1.7; }
+.notice button { padding: 0; color: inherit; text-decoration: underline; font-size: var(--text-caption); }
+.settings-footer { height: 42px; flex-shrink: 0; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; font-size: var(--text-caption); color: var(--muted); background: var(--surface); }
+.saved-label { display: flex; align-items: center; gap: 6px; }
+
+/* Preferences use a single grouped-row pattern. Details are disclosed on demand. */
+#pane-general { padding: 20px; }
+.preference-group + .preference-group { margin-top: 20px; }
+.preference-heading { margin: 0 12px 6px; color: var(--muted); font-size: var(--text-caption); font-weight: var(--weight-label); line-height: 16px; }
+.preference-list { border: 1px solid var(--line); border-radius: 9px; background: var(--control); overflow: hidden; }
+.preference-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin: 0 12px; }
+.preference-row + .preference-row { border-top: 1px solid var(--line); }
+.preference-label { font-size: var(--text-body); line-height: 20px; flex-shrink: 0; font-weight: 400; }
+.preference-row .select { width: 176px; min-width: 0; flex-shrink: 1; border-color: transparent; background: var(--well); }
+.preference-row .switch { margin-right: 1px; }
+.preference-note { margin: 6px 12px 0; color: var(--muted); font-size: var(--text-caption); line-height: 18px; }
+.saved-data-button { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 5px 0 5px 8px; color: var(--muted); font-size: .625rem; line-height: 18px; }
+.saved-data-button #cache-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-data-button:hover { color: var(--ink); }
+.disclosure-chevron { font-size: 19px; line-height: 18px; margin-left: 2px; }
+.saved-data-button[aria-expanded=true] .disclosure-chevron { transform: rotate(90deg); }
+.cache-management { margin: 12px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.cache-management .storage-details { margin: 0; border: 0; padding: 0; }
+.cache-management-footer { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
+.secondary-button { background: var(--control); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; font-size: var(--text-caption); line-height: 18px; }
+@media (max-width:520px) {
+  #pane-general { padding: 20px 16px; }
+  .preference-row { margin-left: 10px; margin-right: 10px; gap: 10px; }
+  .preference-row .select { width: 146px; }
+  .preference-label { font-size: var(--text-secondary); }
+  .preference-note { margin-left: 10px; margin-right: 10px; }
+  .saved-data-button .dot { display: none; }
+}
+
+/* Website management shares the grouped-list structure of General settings. */
+#pane-websites { padding: 20px; }
+.search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--control); border-radius: 7px; padding: 7px 10px; }
+.search:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.search svg { width: 14px; height: 14px; color: var(--muted); }
+.search input { border: 0; background: transparent; width: 100%; font-size: var(--text-secondary); line-height: 18px; outline: 0; min-width: 0; }
+.list-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 12px 2px 16px; color: var(--muted); font-size: var(--text-caption); line-height: 18px; }
+.tools-left { display: flex; align-items: center; gap: 10px; }
+.tools-left .text-button + .text-button { padding-left: 10px; border-left: 1px solid var(--line); }
+.website-section + .website-section { margin-top: 16px; }
+.website-group-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 12px 8px; color: var(--muted); font-size: var(--text-caption); font-weight: 500; line-height: 16px; }
+.group-title { display: flex; align-items: center; gap: 6px; }
+.group-title svg { width: 11px; height: 11px; }
+.group-count { font-size: .625rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+.website-rows { border: 1px solid var(--line); border-radius: 9px; background: var(--control); overflow: hidden; }
+.site-row { display: grid; grid-template-columns: 14px minmax(0,1fr) 28px 20px; align-items: center; gap: 10px; min-height: 54px; margin: 0 12px; padding: 8px 0; position: relative; }
+.site-row + .site-row { border-top: 1px solid var(--line); }
+.site-row:has(.site-copy:hover) .site-copy strong { color: var(--green); }
+.site-row[draggable=true] { cursor: grab; }
+.site-row.dragging { opacity: .35; }
+.site-row.drag-target { box-shadow: inset 0 2px 0 var(--green); }
+.site-checkbox { appearance: none; width: 14px; height: 14px; margin: 0; border: 1px solid #9fa99e; border-radius: 3px; background: var(--control); cursor: pointer; position: relative; }
+.site-checkbox:checked { background: var(--green); border-color: var(--green); }
+.site-checkbox:checked::after { content: ""; position: absolute; left: 3px; top: 1px; width: 4px; height: 7px; border-right: 1.4px solid #fff; border-bottom: 1.4px solid #fff; transform: rotate(40deg); }
+.site-copy { min-width: 0; cursor: pointer; }
+.site-copy strong { display: flex; align-items: center; gap: 7px; font-size: var(--text-body); line-height: 18px; font-weight: var(--weight-label); }
+.site-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-domain { display: block; margin-top: 3px; color: var(--muted); font-size: var(--text-caption); line-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-color { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; }
+.pin-button { display: grid; place-items: center; width: 28px; height: 28px; padding: 6px; border-radius: 5px; color: var(--muted); }
+.pin-button svg { width: 14px; height: 14px; }
+.pin-button:not([aria-pressed=true]) { opacity: .55; }
+.pin-button[aria-pressed=true] { color: var(--green); background: var(--green-wash); }
+.site-row:hover .pin-button, .pin-button:focus-visible { opacity: 1; }
+.site-order { position: relative; display: grid; place-items: center; width: 20px; height: 36px; }
+.drag-handle { width: 12px; height: 16px; color: var(--muted); opacity: .45; pointer-events: none; }
+.move-controls { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; }
+.move-controls button { width: 20px; height: 18px; padding: 0; font-size: 12px; line-height: 18px; color: var(--muted); border-radius: 3px; }
+.site-row:hover .move-controls, .site-row:focus-within .move-controls { opacity: 1; }
+.site-row:hover .drag-handle, .site-row:focus-within .drag-handle { opacity: 0; }
+.site-controls-placeholder { grid-column: 3 / -1; }
+.site-legend { margin: 12px 12px 0; color: var(--muted); font-size: var(--text-caption); line-height: 18px; }
+.empty-search { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 44px 16px; margin-top: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--control); text-align: center; }
+.empty-search>svg { width: 22px; height: 22px; color: var(--muted); margin-bottom: 4px; }
+.empty-search h3 { font-size: var(--text-body); line-height: 20px; font-weight: 500; }
+.empty-search p { font-size: var(--text-caption); color: var(--muted); line-height: 18px; }
+.empty-search button { margin-top: 6px; }
+.connection-field { margin: 0 0 20px; }
+.connection-field label { display: block; font-size: var(--text-secondary); color: var(--muted); margin-bottom: var(--space-sm); }
+.connection-field input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); background: var(--control); border-radius: 7px; font-size: var(--text-body); }
+.primary-button { background: var(--green); color: #fff; padding: 10px 12px; border-radius: 7px; font-size: var(--text-secondary); width: 100%; margin-top: 20px; }
+.connection-summary { padding-top: var(--space-md); color: var(--muted); font-size: var(--text-caption); line-height: 1.9; }
+
+/* Overview: stronger primary numbers, quieter metadata, consistent card rhythm. */
+.popover-wrap { position: relative; }
+.popover { width: 360px; height: 640px; border: 1px solid var(--rim); background: linear-gradient(145deg,var(--surface),var(--bottom)); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; position: relative; }
+.popover::before { content: ""; position: absolute; right: 48px; top: -6px; width: 11px; height: 11px; background: var(--surface); border-top: 1px solid var(--rim); border-left: 1px solid var(--rim); transform: rotate(45deg); border-radius: 3px 0 0; }
+.overview-header { padding: 20px 20px 16px; display: flex; align-items: center; justify-content: space-between; }
+.overview-heading { display: flex; align-items: center; gap: 10px; }
+.app-chip { width: 32px; height: 32px; display: grid; place-items: center; background: var(--well); border-radius: 9px; }
+.overview-heading h2 { font-size: var(--text-heading); line-height: 20px; font-weight: var(--weight-heading); }
+.overview-heading p { font-size: var(--text-caption); color: var(--muted); margin-top: 2px; }
+.toolbar { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 1px; background: #88888803; }
+.toolbar button { width: 30px; height: 30px; border-radius: 5px; color: var(--muted); padding: 7px; }
+.toolbar button svg { width: 16px; height: 16px; }
+.toolbar button:hover { background: var(--well); }
+.toolbar .divider { width: 1px; height: 13px; background: var(--line); margin: 0 2px; }
+.periods { margin: 0 20px; }
+.periods button { font-size: var(--text-caption); padding-left: 2px; padding-right: 2px; }
+.query-range { display: flex; justify-content: space-between; gap: 8px; padding: 12px 20px 10px; font-size: .625rem; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.offline-banner { margin: 0 20px 8px; padding: 10px; background: var(--notice); color: var(--notice-ink); border-radius: 6px; font-size: var(--text-caption); line-height: 17px; display: flex; align-items: flex-start; gap: 7px; }
+.offline-banner svg { width: 13px; height: 13px; margin-top: 2px; }
+.offline-banner strong { font-weight: var(--weight-label); }
+.offline-banner small { display: block; font-size: .625rem; opacity: .9; margin-top: 3px; }
+.overview-list { overflow: auto; flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: #88888840 transparent; padding: 0 20px; }
+.overview-group { font-size: .625rem; line-height: 16px; color: var(--muted); padding: 8px 0 2px; display: flex; align-items: center; gap: 5px; }
+.overview-group svg { width: 10px; height: 10px; }
+.overview-card { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.overview-card:last-child { border: 0; }
+.card-heading { display: flex; justify-content: space-between; align-items: start; gap: var(--space-md); }
+.card-title { font-size: var(--text-body); line-height: 19px; font-weight: var(--weight-heading); display: flex; align-items: center; gap: 6px; }
+.card-title svg { width: 11px; height: 11px; color: var(--muted); }
+.card-domain { font-size: var(--text-caption); color: var(--muted); margin-top: 3px; line-height: 16px; }
+.card-value { text-align: right; font-size: 1.5rem; font-weight: var(--weight-label); line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.03em; white-space: nowrap; }
+.card-value small { font-size: var(--text-caption); font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: var(--space-xs); }
+.growth { font-size: .625rem; line-height: 16px; text-align: right; color: var(--green); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.growth.down { color: var(--orange); }
+.mini-chart { height: 46px; display: flex; align-items: end; gap: 5px; margin-top: 12px; position: relative; }
+.mini-chart .bar { flex: 1; min-width: 0; border-radius: 2.5px 2.5px 2px 2px; background: linear-gradient(var(--bar-top), var(--bar-base)); position: relative; }
+.mini-chart .bar.zero { height: 1px !important; background: var(--line); border-radius: 0; }
+.mini-chart .bar:hover::after { content: attr(data-tip); position: absolute; white-space: nowrap; left: 50%; bottom: calc(100% + 5px); transform: translateX(-50%); font-size: var(--text-caption); background: var(--ink); color: var(--surface); padding: 5px 7px; border-radius: 4px; z-index: 3; font-variant-numeric: tabular-nums; }
+.mini-axis { display: flex; justify-content: space-between; font-size: .625rem; line-height: 16px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.mini-stats { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 12px; }
+.mini-stats div { border-left: 1px solid var(--line); padding-left: var(--space-md); }
+.mini-stats div:first-child { border: 0; padding-left: 0; }
+.mini-stats span { display: block; font-size: .625rem; line-height: 16px; color: var(--muted); }
+.mini-stats strong { display: block; font-size: var(--text-body); line-height: 18px; font-weight: var(--weight-label); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.overview-footer { padding: 10px 20px; border-top: 1px solid var(--line); font-size: .625rem; line-height: 18px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); flex-shrink: 0; height: 40px; }
+.overview-footer .fresh { display: flex; align-items: center; gap: 5px; }
+.overview-footer .text-button { font-size: var(--text-caption); }
+.cache-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 240px; color: var(--muted); padding: 20px; gap: var(--space-md); }
+.cache-empty svg { width: 24px; height: 24px; opacity: .6; }
+.cache-empty h3 { font-size: var(--text-body); font-weight: var(--weight-heading); color: var(--ink); }
+.cache-empty p { font-size: var(--text-caption); line-height: 1.9; max-width: 230px; }
+.cache-empty button { font-size: var(--text-caption); color: var(--green); padding: 6px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--control); }
+
+/* Review controls and disclosure are outside the product. */
+.scenario-bar { display: flex; align-items: center; gap: var(--space-lg); flex-wrap: wrap; padding: 20px 0 0; margin-top: 20px; border-top: 1px solid #334d3914; }
+.scenario-label { font-size: var(--text-caption); color: #536657; flex-shrink: 0; }
+.scenario-options { display: flex; gap: 5px; flex-wrap: wrap; }
+.scenario-options button { font-size: var(--text-caption); padding: 6px 10px; border-radius: 5px; color: #425b4b; background: #ffffff20; border: 1px solid transparent; }
+.scenario-options button[aria-pressed=true] { background: #f9fbf6; color: #294b37; box-shadow: 0 1px 4px #304d3912; }
+.scenario-options .reset { border-left: 1px solid #334d3925; border-radius: 0; background: none; margin-left: var(--space-sm); padding-left: var(--space-lg); }
+.design-rationale { margin-top: var(--space-xl); }
+.design-rationale>summary { font-size: var(--text-caption); color: var(--muted); cursor: pointer; width: fit-content; }
+.design-notes { display: grid; grid-template-columns: repeat(4,1fr); gap: var(--space-xl); padding-top: 16px; }
+.design-note h3 { font-size: var(--text-secondary); font-weight: var(--weight-label); display: flex; align-items: center; gap: var(--space-sm); }
+.design-note h3 span { font-size: var(--text-caption); color: var(--muted); font-weight: 400; }
+.design-note p { font-size: var(--text-caption); color: var(--muted); line-height: 1.9; margin-top: 7px; }
+.page-footer { display: flex; justify-content: space-between; color: var(--muted); font-size: .625rem; line-height: 18px; margin-top: 20px; gap: var(--space-lg); }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 11px 17px; background: var(--ink); color: var(--surface); border-radius: 8px; font-size: var(--text-secondary); box-shadow: 0 5px 20px #00000020; z-index: 10; line-height: 1.7; }
+
+html[data-theme=dark] { color-scheme: dark; --page: #1b1e1a; --ink: #eff1eb; --muted: #a6afa3; --surface: #2b3029; --bottom: #252a24; --well: #1d221c; --line: #ffffff14; --green: #42c796; --green-wash: #42c79610; --orange: #edac73; --control: #3a4136; --rim: #ffffff20; --shadow: 0 22px 42px #00000030, 0 3px 9px #0000001a; --notice: #433d2b; --notice-ink: #e7c694; }
+html[data-theme=dark] .desk { background: linear-gradient(145deg,#303b30,#26362b); border-color: #ffffff0d; box-shadow: inset 0 1px 0 #ffffff0b; }
+html[data-theme=dark] .menu { color: #c3d0bf; border-color: #ffffff12; }
+html[data-theme=dark] .status-item { background: #ffffff12; }
+html[data-theme=dark] .frame-label, html[data-theme=dark] .scenario-label { color: #a6b6a3; }
+html[data-theme=dark] .scenario-bar { border-color: #ffffff12; }
+html[data-theme=dark] .scenario-options button { background: transparent; color: #b9c9b7; }
+html[data-theme=dark] .scenario-options button[aria-pressed=true] { background: #455540; color: #f3f7ed; }
+html[data-theme=dark] .scenario-options .reset { border-color: #ffffff20; }
+html[data-theme=dark] .switch { background: #596353; }
+html[data-theme=dark] .switch[aria-checked=true] { background: var(--green); }
+html[data-theme=dark] .danger { color: #eea293; }
+
+@media (prefers-reduced-motion:no-preference) {
+  .switch::before { transition: left .16s ease-out; }
+  .switch { transition: background .16s ease-out; }
+}
+@media (max-width: 1040px) {
+  .page { padding: 28px 24px; }
+  .desk { padding-left: 20px; padding-right: 20px; }
+  .workspaces { gap: 28px; }
+  .intro .scope { display: none; }
+}
+@media (max-width: 920px) {
+  .workspaces { grid-template-columns: 440px; gap: 32px; }
+  .preview-frame { width: 360px; justify-self: center; }
+  .design-notes { grid-template-columns: 1fr 1fr; }
+  .menu-left span:not(:first-child) { display: none; }
+}
+@media (max-width: 520px) {
+  .page { padding: 20px 12px; }
+  .brand .version { font-size: .625rem; margin-left: 2px; padding-left: 9px; }
+  .theme-control>span { display: none; }
+  .top { gap: var(--space-sm); }
+  .theme-control { gap: var(--space-xs); }
+  .theme-control button { width: 27px; height: 27px; }
+  .intro { margin: 24px 0 20px; }
+  .intro h1 { font-size: 1.375rem; }
+  .intro p { font-size: var(--text-caption); max-width: 31ch; }
+  .desk { padding: 0 10px 20px; }
+  .workspaces { grid-template-columns: minmax(0,1fr); padding-top: 20px; gap: 28px; }
+  .settings-frame { min-width: 0; }
+  .settings-window { width: 100%; }
+  .preview-frame, .popover { width: 100%; }
+  .menu { margin: 0; }
+  .menu-right { gap: 10px; }
+  .menu-right>span { display: none; }
+  .pane { padding-left: 20px; padding-right: 20px; }
+  .settings-footer { padding-left: 20px; padding-right: 20px; }
+  .settings-title { padding-left: 64px; padding-right: 64px; }
+  .select { min-width: 140px; }
+  #pane-websites { padding: 20px 16px; }
+  .site-row { grid-template-columns: 14px minmax(0,1fr) 26px 20px; gap: 8px; margin-left: 10px; margin-right: 10px; }
+  .site-copy strong { font-size: var(--text-secondary); }
+  .scenario-bar { gap: var(--space-sm); }
+  .scenario-options button { padding: 6px 8px; font-size: .625rem; }
+  .scenario-options .reset { margin-left: 0; padding-left: 10px; }
+  .page-footer { display: block; }
+  .page-footer span { display: block; }
+  .query-range { font-size: .5625rem; }
+}
+</style>
+</head>
+<body>
+<svg aria-hidden="true" style="display:none"><defs>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="m10 3-1 3-3 1-3 3 2 3v3l3 2 3-1 3 1 3-2v-3l2-3-3-3-3-1-1-3z"/><circle cx="11" cy="11" r="3"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 4v6h-6M19 10a8 8 0 1 0 0 6"/></symbol>
+<symbol id="i-pin" viewBox="0 0 24 24"><path d="m9 3 8 0-1 6 4 4v2H6v-2l4-4-1-6ZM13 15v7"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+<symbol id="i-drag" viewBox="0 0 24 24"><path d="M8 5h.1M16 5h.1M8 12h.1M16 12h.1M8 19h.1M16 19h.1" stroke-width="3"/></symbol>
+<symbol id="i-offline" viewBox="0 0 24 24"><path d="m3 3 18 18M8.5 8.5a10 10 0 0 1 11 2M4.5 11a10 10 0 0 1 1.7-1.3M8 15a5 5 0 0 1 6.5-1M11 18.5l1 1 1-1M2 7a16 16 0 0 1 2.8-1.8M9 4.3A16 16 0 0 1 22 7"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-battery" viewBox="0 0 24 24"><rect x="2" y="6" width="18" height="12" rx="2"/><path d="M23 10v4M5 9h11v6H5z"/></symbol>
+</defs></svg>
+<main class="page">
+<header class="top"><div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span> UmamiBar <span class="version">日常使用偏好 · 设计稿 04</span></div><div class="theme-control"><span>外观预览</span><button data-theme-choice="light" aria-label="浅色外观" aria-pressed="true"><svg><use href="#i-sun"/></svg></button><button data-theme-choice="dark" aria-label="深色外观" aria-pressed="false"><svg><use href="#i-moon"/></svg></button></div></header>
+<div class="intro"><div><h1>日常偏好，清楚有序。</h1><p>启动方式、关注顺序与数据保存，在熟悉的原生界面里设好。</p></div><span class="scope">布局与排版优化 / 交互保持一致</span></div>
+<section class="desk" aria-label="macOS 应用交互设计预览">
+<div class="menu"><div class="menu-left"><span class="apple" aria-hidden="true">&#63743;</span><strong>UmamiBar</strong><span>文件</span><span>编辑</span><span>窗口</span></div><div class="menu-right"><button id="status-item" class="status-item" aria-label="菜单栏统计预览"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span id="menu-number">38</span></button><svg class="system-icon" aria-hidden="true"><use href="#i-battery"/></svg><span>周日 14:44</span></div></div>
+<div class="workspaces">
+<section class="settings-frame"><div class="frame-label"><span><span class="num">01</span> 偏好设置</span><span class="measure">440 × 640 PT</span></div><div class="settings-window">
+<div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+<header class="settings-title"><h2>UmamiBar 设置</h2></header>
+<nav class="segmented settings-tabs" role="tablist" aria-label="设置分类"><button role="tab" id="tab-connection" aria-controls="pane-connection" data-tab="connection" aria-selected="false" tabindex="-1">连接</button><button role="tab" id="tab-websites" aria-controls="pane-websites" data-tab="websites" aria-selected="false" tabindex="-1">网站</button><button role="tab" id="tab-general" aria-controls="pane-general" data-tab="general" aria-selected="true">通用</button></nav>
+<div class="settings-content">
+<section id="pane-general" class="pane" role="tabpanel" aria-labelledby="tab-general">
+<div class="preference-group">
+<h3 class="preference-heading">常规</h3>
+<div class="preference-list">
+<div class="preference-row"><span class="preference-label" id="launch-label">登录时启动</span><button class="switch" id="launch-switch" role="switch" aria-labelledby="launch-label" aria-checked="false"></button></div>
+<div class="preference-row"><label for="language" class="preference-label">语言</label><select class="select" id="language"><option>跟随系统</option><option>简体中文</option><option>English</option></select></div>
+</div>
+<p class="preference-note">登录后仅在菜单栏运行，不自动打开窗口。</p>
+<div class="notice" id="launch-blocked" hidden>登录启动已被 macOS 停用。<br><button id="open-system">前往系统设置开启 ↗</button></div>
+</div>
+<div class="preference-group">
+<h3 class="preference-heading">菜单栏</h3>
+<div class="preference-list">
+<div class="preference-row"><label class="preference-label" for="menu-mode">显示内容</label><select class="select" id="menu-mode"><option value="total">合计访客</option><option value="site">指定网站</option><option value="icon">仅图标</option></select></div>
+<div class="preference-row" id="menu-site-row" hidden><label class="preference-label" for="menu-site">指定网站</label><select class="select" id="menu-site"></select></div>
+</div>
+<p class="preference-note" id="menu-explanation">全部已选网站 · 跟随概览时间范围 · 跨站未去重</p>
+</div>
+<div class="preference-group">
+<h3 class="preference-heading">本地数据</h3>
+<div class="preference-list">
+<div class="preference-row"><span class="preference-label" id="cache-label">保留最近成功数据</span><button class="switch" id="cache-switch" role="switch" aria-labelledby="cache-label" aria-checked="true"></button></div>
+<div class="preference-row"><span class="preference-label">已保存数据</span><button class="saved-data-button" id="cache-details-button" aria-label="查看与管理已保存数据" aria-expanded="false" aria-controls="cache-details"><span class="dot" id="cache-dot"></span><span id="cache-summary">今天 14:43:50 · 3 个网站</span><span class="disclosure-chevron" aria-hidden="true">›</span></button></div>
+</div>
+<p class="preference-note">离线时查看上次结果。仅存于本机，不包含密钥。</p>
+<div id="cache-details" class="cache-management" hidden><div id="cache-ranges" class="storage-details"></div><div class="cache-management-footer"><button class="secondary-button" id="clear-cache">清除已保存数据…</button></div></div>
+<div class="inline-confirm" id="cache-confirm" hidden><div id="confirm-title">清除已保存的网站数据？</div><p id="confirm-description">连接、API Key、网站顺序和偏好都会保留。</p><div class="confirm-actions"><button class="text-button" id="cancel-clear">取消</button><button class="text-button danger" id="confirm-clear">清除数据</button></div></div>
+</div>
+</section>
+<section id="pane-websites" class="pane" role="tabpanel" aria-labelledby="tab-websites" hidden>
+<label class="search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="website-search" type="search" placeholder="搜索网站名称或域名" aria-label="搜索网站"></label>
+<div class="list-tools"><span id="selected-count">已关注 3 / 4 个网站</span><div class="tools-left"><button class="text-button" id="select-all" title="关注当前连接的全部网站">全选</button><button class="text-button" id="select-none" title="取消关注全部网站">取消全选</button></div></div>
+<div id="website-list"></div>
+<p class="site-legend" id="website-hint">勾选以关注，拖动排序；图钉可置顶。<br>取消关注不会删除 Umami 中的网站。</p>
+</section>
+<section id="pane-connection" class="pane" role="tabpanel" aria-labelledby="tab-connection" hidden><div class="connection-field"><label for="server">服务地址</label><input id="server" type="url" value="https://api.umami.is/v1" readonly></div><div class="connection-field"><label for="key">API Key</label><input id="key" type="password" value="preview-not-a-real-key" readonly></div><p class="hint">已保存 · 密钥保存在 macOS 钥匙串</p><button class="primary-button" id="verify-connection">验证并选择网站</button><p class="connection-summary">当前连接正常，可访问 4 个网站。<br>本轮沿用现有连接流程。</p></section>
+</div><footer class="settings-footer"><span class="saved-label" id="save-state"><i class="dot"></i> 更改自动保存</span><button class="text-button" id="check-updates">检查更新…</button></footer>
+</div></section>
+<section class="preview-frame"><div class="frame-label"><span><span class="num">02</span> 概览 · 即时预览</span><span class="measure">360 PT</span></div><div class="popover-wrap"><div class="popover" id="popover">
+<header class="overview-header"><div class="overview-heading"><div class="app-chip"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span></div><div><h2>网站概览</h2><p id="overview-count">3 个网站</p></div></div><div class="toolbar"><button id="refresh-data" aria-label="刷新数据" title="刷新数据"><svg><use href="#i-refresh"/></svg></button><span class="divider"></span><button id="show-general" aria-label="连接与网站设置" title="设置"><svg><use href="#i-settings"/></svg></button></div></header>
+<div class="segmented periods" role="tablist" aria-label="统计时间范围"><button role="tab" data-period="day" aria-selected="true">最近 24 小时</button><button role="tab" data-period="week" aria-selected="false" tabindex="-1">最近 7 天</button><button role="tab" data-period="month" aria-selected="false" tabindex="-1">最近一个月</button></div><div class="query-range"><span id="query-date">10/17 14:43 — 10/18 14:43</span><span>GMT+8</span></div>
+<div class="offline-banner" id="offline-banner" hidden><svg aria-hidden="true"><use href="#i-offline"/></svg><div><strong id="offline-title">当前离线 · 显示上次成功数据</strong><small id="offline-description">今天 14:43:50 保存 · 查询范围保持不变</small></div></div>
+<div class="overview-list" id="overview-list"></div><footer class="overview-footer"><span class="fresh"><i class="dot" id="fresh-dot"></i><span id="fresh-label">14:43:50 已刷新</span></span><button class="text-button" id="manage-websites">管理网站</button></footer>
+</div></div></section>
+</div>
+<div class="scenario-bar"><span class="scenario-label">状态预览</span><div class="scenario-options" role="group" aria-label="演示场景"><button data-scenario="online" aria-pressed="true">正常使用</button><button data-scenario="offline" aria-pressed="false">离线恢复</button><button data-scenario="first-offline" aria-pressed="false">首次离线</button><button data-scenario="launch-blocked" aria-pressed="false">启动被系统停用</button><button id="reset-demo" class="reset">重置演示</button></div></div>
+</section>
+<details class="design-rationale"><summary>查看布局与交互说明</summary><section class="design-notes" aria-label="设计规则"><article class="design-note"><h3><span>01</span> 登录启动</h3><p>默认关闭。启用后静默常驻菜单栏；被系统停用时，显示原因与恢复入口。</p></article><article class="design-note"><h3><span>02</span> 排序与置顶</h3><p>已选网站按组内顺序展示，置顶组始终在前。取消置顶恢复普通组的手动顺序。</p></article><article class="design-note"><h3><span>03</span> 菜单栏数字</h3><p>跟随概览时间范围，可显示合计、单站或仅图标。数字源被取消选择时回退合计并提示。</p></article><article class="design-note"><h3><span>04</span> 最近成功数据</h3><p>按网站与时间范围分别保存。离线展示原查询区间与成功时间；没有记录时显示「—」。</p></article></section></details>
+<footer class="page-footer"><span>交互设计稿 · 演示数据 · 不连接 Umami 或更改系统设置</span><span>浅深外观 / 键盘操作 / 本地预览偏好</span></footer>
+</main><div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const icon=(name,cls='')=>`<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const storageKey='umamibar-preferences-design-01';
+const sites=[{id:'fanbar',name:'Fanbar 软件',domain:'getfanbar.com',count:31,views:52,bounce:'39%',duration:'26秒',change:'↑ 3.3%',top:'#ffb47e',base:'#e67b32',bars:[3,7,0,4,1,1,0,1,1,0,0,0,0,0,2,0,0,4,0,1,0,5,1,2]},{id:'framecho',name:'framecho',domain:'getframecho.com',count:1,views:1,bounce:'100%',duration:'—',change:'↓ 75.0%',top:'#7ed9a8',base:'#1e9e68',bars:Array.from({length:24},(_,i)=>i===17?1:0)},{id:'blog',name:'个人博客',domain:'lin.example.com',count:6,views:13,bounce:'50%',duration:'42秒',change:'↑ 20.0%',top:'#8db8ff',base:'#3b7de8',bars:[0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,2,0,0,0,1,0,0,1]},{id:'docs',name:'产品文档',domain:'docs.example.com',count:24,views:37,bounce:'28%',duration:'1分12秒',change:'↑ 14.3%',top:'#c2a6ff',base:'#8b5cf6',bars:[1,0,1,0,2,3,0,1,0,0,0,2,0,0,0,2,1,0,1,0,2,0,3,2]}];
+const periods={day:{label:'最近 24 小时',date:'10/17 14:43 — 10/18 14:43',axis:['14:43','02:43','14:43'],mult:1},week:{label:'最近 7 天',date:'10/11 14:43 — 10/18 14:43',axis:['10/11','10/14','10/18'],mult:7},month:{label:'最近一个月',date:'09/18 14:43 — 10/18 14:43',axis:['09/18','10/03','10/18'],mult:30}};
+const defaults=()=>({launch:false,menu:'total',menuSite:'fanbar',cache:true,selected:['fanbar','framecho','blog'],pinned:['fanbar'],order:['fanbar','framecho','blog','docs'],snapshots:{day:['fanbar','framecho','blog'],week:['fanbar','framecho','blog']},theme:'light'});
+let preferences=defaults();
+try{const saved=JSON.parse(localStorage.getItem(storageKey));if(saved&&saved.version===1){const s=saved.preferences;preferences={...preferences,...s,selected:s.selected.filter(id=>sites.some(x=>x.id===id)),pinned:s.pinned.filter(id=>sites.some(x=>x.id===id))};if(!['light','dark'].includes(preferences.theme))preferences.theme='light';}}catch{}
+let period='day',scenario='online',tab='general',dragged=null,confirmAction='clear',toastTimer,saveTimer,refreshTimer,refreshing=false;
+function toast(message){clearTimeout(toastTimer);$('toast').textContent=message;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
+function save(){try{localStorage.setItem(storageKey,JSON.stringify({version:1,preferences}));$('save-state').innerHTML='<i class="dot"></i> 已保存';}catch{$('save-state').textContent='预览偏好未能保存';}clearTimeout(saveTimer);saveTimer=setTimeout(()=>$('save-state').innerHTML='<i class="dot"></i> 更改自动保存',1800);}
+function orderedSites(){return preferences.order.map(id=>sites.find(s=>s.id===id)).filter(Boolean);}
+function selectedSites(){return orderedSites().filter(s=>preferences.selected.includes(s.id));}
+function sortedSelected(){const chosen=selectedSites();return [...preferences.pinned.map(id=>chosen.find(s=>s.id===id)).filter(Boolean),...chosen.filter(s=>!preferences.pinned.includes(s.id))];}
+function isOffline(){return scenario==='offline'||scenario==='first-offline';}
+function snapshotIDs(){return scenario==='first-offline'?[]:(preferences.snapshots[period]||[]);}
+function canShow(site){return !isOffline()||snapshotIDs().includes(site.id);}
+function siteValue(site){return site.count*periods[period].mult;}
+function setTab(next,focus=false){tab=next;document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===tab;b.setAttribute('aria-selected',active);b.tabIndex=active?0:-1;});document.querySelectorAll('.pane').forEach(el=>el.hidden=el.id!==`pane-${tab}`);document.querySelector('.settings-content').scrollTop=0;if(focus)$(`tab-${tab}`).focus();}
+function renderGeneral(){
+ $('launch-switch').setAttribute('aria-checked',preferences.launch&&scenario!=='launch-blocked');$('launch-blocked').hidden=scenario!=='launch-blocked';
+ $('cache-switch').setAttribute('aria-checked',preferences.cache);
+ $('menu-mode').value=preferences.menu;
+ $('menu-site-row').hidden=preferences.menu!=='site';
+ $('menu-site').innerHTML=selectedSites().map(s=>`<option value="${s.id}">${s.name}</option>`).join('');$('menu-site').value=preferences.menuSite;$('menu-site').disabled=!preferences.selected.length;
+ $('menu-mode').querySelector('option[value="site"]').disabled=!preferences.selected.length;
+ $('menu-explanation').textContent=preferences.menu==='icon'?'隐藏数字，保留菜单栏入口。':preferences.menu==='site'?'所选网站 · 跟随概览的时间范围':'全部已选网站 · 当前时间范围 · 跨站未去重';
+ const keys=Object.keys(preferences.snapshots).filter(k=>preferences.snapshots[k].length);
+ const cachedSites=new Set(keys.flatMap(k=>preferences.snapshots[k]));
+ $('cache-summary').textContent=!preferences.cache?'已关闭 · 不在本地保留统计数据':keys.length?`今天 14:43:50 · ${cachedSites.size} 个网站`:'尚无已保存数据';
+ $('cache-dot').style.background=keys.length&&preferences.cache?'var(--green)':'var(--muted)';
+ $('clear-cache').disabled=!keys.length;$('cache-details-button').disabled=!keys.length;
+ $('cache-ranges').innerHTML=keys.map(k=>`<strong>${periods[k].label}</strong> · ${preferences.snapshots[k].length} 个网站<br>${periods[k].date}<br>`).join('')+'<span>保留当前连接下每个范围的最近一次成功结果。</span>';
+ document.documentElement.dataset.theme=preferences.theme;document.querySelectorAll('[data-theme-choice]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.themeChoice===preferences.theme));
+}
+function renderWebsites(){
+ const query=$('website-search').value.trim().toLowerCase();
+ const matched=orderedSites().filter(s=>`${s.name} ${s.domain}`.toLowerCase().includes(query));
+ const groups=[{title:'置顶',items:preferences.pinned.map(id=>matched.find(s=>s.id===id&&preferences.selected.includes(id))).filter(Boolean)},{title:'其他网站',items:matched.filter(s=>preferences.selected.includes(s.id)&&!preferences.pinned.includes(s.id))},{title:'未关注',items:matched.filter(s=>!preferences.selected.includes(s.id))}];
+ $('selected-count').textContent=query?`找到 ${matched.length} 个网站`:`已关注 ${preferences.selected.length} / ${sites.length} 个网站`;
+ $('website-hint').innerHTML=query?'搜索时可关注或置顶，清空搜索后可排序。':'勾选以关注，拖动排序；图钉可置顶。<br>取消关注不会删除 Umami 中的网站。';
+ $('website-list').innerHTML=matched.length?groups.map(group=>!group.items.length?'':`<section class="website-section" aria-label="${group.title}"><h3 class="website-group-label"><span class="group-title">${group.title==='置顶'?icon('pin'):''}${group.title}</span><span class="group-count">${group.items.length}</span></h3><div class="website-rows">${group.items.map(s=>{
+  const selected=preferences.selected.includes(s.id),pinned=preferences.pinned.includes(s.id);const siblings=group.items;
+  return `<div class="site-row" data-row="${s.id}" draggable="${selected&&!query}" role="group" aria-label="${s.name}，${group.title}"><input class="site-checkbox" id="watch-${s.id}" type="checkbox" data-select="${s.id}" aria-label="关注 ${s.name}" ${selected?'checked':''}><label class="site-copy" for="watch-${s.id}"><strong><span class="site-name">${s.name}</span>${selected?`<i class="site-color" style="background:${s.base}" aria-hidden="true"></i>`:''}</strong><span class="site-domain">${s.domain}</span></label>${selected?`<button class="pin-button" data-pin="${s.id}" aria-label="${pinned?'取消置顶':'置顶'} ${s.name}" title="${pinned?'取消置顶':'置顶'}" aria-pressed="${pinned}">${icon('pin')}</button><div class="site-order">${icon('drag','drag-handle')}<div class="move-controls"><button data-move="${s.id}" data-direction="-1" aria-label="向上移动 ${s.name}" ${siblings.indexOf(s)===0||query?'disabled':''}>⌃</button><button data-move="${s.id}" data-direction="1" aria-label="向下移动 ${s.name}" ${siblings.indexOf(s)===siblings.length-1||query?'disabled':''}>⌄</button></div></div>`:'<span class="site-controls-placeholder" aria-hidden="true"></span>'}</div>`;
+ }).join('')}</div></section>`).join(''):`<div class="empty-search">${icon('search')}<h3>没有匹配的网站</h3><p>试试其他名称或域名。</p><button class="secondary-button" data-clear-search>清空搜索</button></div>`;
+}
+function renderMenu(){
+ const chosen=selectedSites(),target=sites.find(s=>s.id===preferences.menuSite);
+ let value=null,complete=true;
+ if(preferences.menu==='site'&&target&&chosen.includes(target)){complete=canShow(target);if(complete)value=siteValue(target);}else if(preferences.menu==='total'&&chosen.length){complete=chosen.every(canShow);if(complete)value=chosen.reduce((sum,s)=>sum+siteValue(s),0);}
+ $('status-item').classList.toggle('icon-only',preferences.menu==='icon');$('menu-number').hidden=preferences.menu==='icon';$('menu-number').textContent=value===null?'—':value>=10000?`${(value/1000).toFixed(1)}K`:String(value);
+ $('status-item').classList.toggle('cached',isOffline()&&value!==null&&preferences.menu!=='icon');
+ const source=preferences.menu==='site'&&target?target.name:'已选网站合计（跨站未去重）';
+ const status=preferences.menu==='icon'?'仅显示图标':`${source} · ${periods[period].label} · ${value===null?'数据不可用':value+' 位访客'}${isOffline()&&value!==null?' · 本地数据，今天 14:43:50 保存':''}`;
+ $('status-item').title=status;$('status-item').setAttribute('aria-label',status);
+}
+function card(site){
+ const available=canShow(site),mult=periods[period].mult;
+ const bars=period==='day'?site.bars:Array.from({length:period==='week'?8:31},(_,i)=>site.bars[(i*3)%24]*3+i%3);
+ const maximum=Math.max(2,...bars);
+ const chart=available?`<div class="mini-chart" aria-label="${site.name}会话趋势" style="--bar-top:${site.top};--bar-base:${site.base}">${bars.map((v,i)=>`<span class="bar ${v?'':'zero'}" style="height:${v?Math.max(3,v/maximum*42):1}px" data-tip="第 ${i+1} 时段 · ${v} 次会话"></span>`).join('')}</div><div class="mini-axis">${periods[period].axis.map(t=>`<span>${t}</span>`).join('')}</div>`:'<div style="height:91px;display:grid;place-items:center;font-size:10px;color:var(--muted)">该范围暂无已保存数据</div>';
+ return `<article class="overview-card"><div class="card-heading"><div><h3 class="card-title">${site.name}${preferences.pinned.includes(site.id)?icon('pin'):''}</h3><p class="card-domain">${site.domain}</p></div><div><div class="card-value">${available?siteValue(site).toLocaleString('zh-CN'):'—'}<small>访客</small></div><div class="growth ${site.change.startsWith('↓')?'down':''}">${available?site.change+' 较上期':'— 较上期'}</div></div></div>${chart}<div class="mini-stats"><div><span>浏览量</span><strong>${available?site.views*mult:'—'}</strong></div><div><span>跳出率</span><strong>${available?site.bounce:'—'}</strong></div><div><span>平均时长</span><strong>${available?site.duration:'—'}</strong></div></div></article>`;
+}
+function renderOverview(){
+ const chosen=sortedSelected(),pinned=chosen.filter(s=>preferences.pinned.includes(s.id)),others=chosen.filter(s=>!preferences.pinned.includes(s.id)),available=chosen.filter(canShow),offline=isOffline();
+ $('overview-count').textContent=`${chosen.length} 个网站`;
+ document.querySelectorAll('[data-period]').forEach(b=>{b.setAttribute('aria-selected',b.dataset.period===period);b.tabIndex=b.dataset.period===period?0:-1;});
+ $('query-date').textContent=offline&&!available.length?'查询范围：'+periods[period].label:periods[period].date;
+ $('offline-banner').hidden=!offline;
+ $('offline-title').textContent=available.length?'当前离线 · 显示上次成功数据':'当前离线 · 暂无可用的本地数据';
+ $('offline-description').textContent=available.length?`今天 14:43:50 保存${available.length<chosen.length?' · 部分网站尚无记录':' · 查询范围保持不变'}`:'联网后刷新，将获取此范围的数据。';
+ if(!chosen.length){$('overview-list').innerHTML=`<div class="cache-empty">${icon('pin')}<h3>选择你关注的网站</h3><p>在网站设置中选择至少一个网站，便可在这里查看访问趋势。</p><button id="empty-manage">选择网站</button></div>`;}
+ else if(offline&&!available.length){$('overview-list').innerHTML=`<div class="cache-empty">${icon('clock')}<h3>${scenario==='first-offline'?'还没有成功获取过数据':'此范围暂无已保存数据'}</h3><p>${!preferences.cache?'本地数据保存已关闭。联网后仍可正常查看。':'联网刷新后，会保留最近成功结果。你也可以切换到已保存的时间范围。'}</p><button id="empty-retry">重试连接</button></div>`;}
+ else{$('overview-list').innerHTML=(pinned.length?`<div class="overview-group">${icon('pin')} 置顶 · ${pinned.length}</div>`+pinned.map(card).join(''):'')+(others.length?`${pinned.length?'<div class="overview-group">其他网站</div>':''}`+others.map(card).join(''):'');}
+ $('fresh-label').textContent=refreshing?'正在刷新…':offline?(available.length?'本地数据 · 14:43:50':'尚无可用数据'):'14:43:50 已刷新';
+ $('fresh-dot').style.background=offline?'var(--orange)':'var(--green)';
+ $('refresh-data').disabled=refreshing;
+ renderMenu();
+}
+function render(){renderGeneral();renderWebsites();renderOverview();document.querySelectorAll('[data-scenario]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.scenario===scenario));}
+function ensureMenuSource(){if(preferences.menu==='site'&&!preferences.selected.includes(preferences.menuSite)){preferences.menu='total';preferences.menuSite=preferences.selected[0]||'fanbar';toast('数字来源已取消关注，菜单栏已改为合计访客。');}}
+function selectedChange(id,checked){preferences.selected=checked?[...new Set([...preferences.selected,id])]:preferences.selected.filter(s=>s!==id);ensureMenuSource();save();render();}
+function move(id,direction){const current=sites.find(s=>s.id===id),pinned=preferences.pinned.includes(id);const group=sortedSelected().filter(s=>preferences.pinned.includes(s.id)===pinned),index=group.findIndex(s=>s.id===id),target=group[index+direction];if(!target)return;const ordering=pinned?preferences.pinned:preferences.order;const a=ordering.indexOf(id),b=ordering.indexOf(target.id);[ordering[a],ordering[b]]=[ordering[b],ordering[a]];save();renderWebsites();renderOverview();document.querySelector(`[data-move="${id}"][data-direction="${direction}"]`)?.focus();toast(`${current.name} 已${direction<0?'上移':'下移'}`);}
+function confirmCache(action){confirmAction=action;$('confirm-title').textContent=action==='disable'?'关闭并清除已保存数据？':'清除已保存的网站数据？';$('confirm-description').textContent=action==='disable'?'此后不再保存统计数据。连接、密钥与偏好不受影响。':'连接、API Key、网站顺序和偏好都会保留。';$('confirm-clear').textContent=action==='disable'?'关闭并清除':'清除数据';$('cache-confirm').hidden=false;$('cancel-clear').focus();}
+function refresh(){if(refreshing)return;refreshing=true;renderOverview();refreshTimer=setTimeout(()=>{refreshing=false;if(isOffline()){renderOverview();toast('仍处于离线演示状态，请切换「正常使用」模拟恢复。');return;}if(preferences.cache)preferences.snapshots[period]=selectedSites().map(s=>s.id);save();render();toast('本次数据已刷新'+(preferences.cache?'并保存。':'。'));},500);}
+$('launch-switch').onclick=()=>{if(scenario==='launch-blocked'){toast('请在系统设置中允许登录时启动。');return;}preferences.launch=!preferences.launch;save();renderGeneral();};
+$('open-system').onclick=()=>toast('设计入口：系统设置 → 通用 → 登录项。原型不会更改系统设置。');
+$('cache-switch').onclick=()=>{if(preferences.cache){confirmCache('disable');}else{preferences.cache=true;save();renderGeneral();toast('已开启，将在下次成功刷新后保存数据。');}};
+$('cache-details-button').onclick=()=>{const expanded=$('cache-details-button').getAttribute('aria-expanded')==='true';$('cache-details').hidden=expanded;$('cache-details-button').setAttribute('aria-expanded',!expanded);};
+$('clear-cache').onclick=()=>confirmCache('clear');$('cancel-clear').onclick=()=>{$('cache-confirm').hidden=true;$(confirmAction==='disable'?'cache-switch':'clear-cache').focus();};
+$('confirm-clear').onclick=()=>{preferences.snapshots={};if(confirmAction==='disable')preferences.cache=false;$('cache-confirm').hidden=true;$('cache-details').hidden=true;$('cache-details-button').setAttribute('aria-expanded',false);save();render();toast(confirmAction==='disable'?'已关闭本地保存，并清除统计数据。':'已清除本地统计数据，连接与偏好已保留。');$('cache-switch').focus();};
+$('menu-mode').onchange=e=>{preferences.menu=e.target.value;if(preferences.menu==='site'&&!preferences.selected.includes(preferences.menuSite))preferences.menuSite=preferences.selected[0];save();renderGeneral();renderOverview();};
+$('menu-site').onchange=e=>{preferences.menuSite=e.target.value;save();renderOverview();};
+$('website-search').oninput=renderWebsites;
+$('website-list').addEventListener('click',e=>{if(e.target.closest('[data-clear-search]')){$('website-search').value='';renderWebsites();$('website-search').focus();}});
+$('select-all').onclick=()=>{preferences.selected=sites.map(s=>s.id);save();render();};
+$('select-none').onclick=()=>{preferences.selected=[];ensureMenuSource();save();render();};
+$('show-general').onclick=()=>setTab('general',true);$('manage-websites').onclick=()=>setTab('websites',true);
+$('overview-list').onclick=e=>{if(e.target.id==='empty-manage')setTab('websites',true);if(e.target.id==='empty-retry')refresh();};
+$('refresh-data').onclick=refresh;
+$('status-item').onclick=()=>{toast($('status-item').title);};
+$('verify-connection').onclick=()=>{setTab('websites');toast('演示连接有效，网站列表已载入。');};
+$('language').onchange=()=>{toast('本轮设计保留现有语言功能，文案预览使用简体中文。');};
+$('check-updates').onclick=()=>toast('沿用现有应用内更新流程。');
+$('reset-demo').onclick=()=>{clearTimeout(refreshTimer);refreshing=false;preferences=defaults();scenario='online';period='day';$('website-search').value='';$('cache-confirm').hidden=true;$('cache-details').hidden=true;$('cache-details-button').setAttribute('aria-expanded',false);$('language').selectedIndex=0;setTab('general');save();render();toast('已恢复默认演示。');};
+document.addEventListener('click',e=>{const t=e.target.closest('[data-tab],[data-period],[data-theme-choice],[data-scenario]');if(!t)return;if(t.dataset.tab)setTab(t.dataset.tab);if(t.dataset.period){period=t.dataset.period;renderOverview();}if(t.dataset.themeChoice){preferences.theme=t.dataset.themeChoice;save();renderGeneral();}if(t.dataset.scenario){clearTimeout(refreshTimer);refreshing=false;scenario=t.dataset.scenario;if(scenario==='launch-blocked'){preferences.launch=true;setTab('general');}render();}});
+$('website-list').addEventListener('change',e=>{if(e.target.dataset.select){const id=e.target.dataset.select;selectedChange(id,e.target.checked);document.querySelector(`[data-select="${id}"]`)?.focus();}});
+$('website-list').addEventListener('click',e=>{const pin=e.target.closest('[data-pin]'),mover=e.target.closest('[data-move]');if(pin){const id=pin.dataset.pin;preferences.pinned=preferences.pinned.includes(id)?preferences.pinned.filter(x=>x!==id):[...preferences.pinned,id];save();renderWebsites();renderOverview();document.querySelector(`[data-pin="${id}"]`)?.focus();}if(mover)move(mover.dataset.move,Number(mover.dataset.direction));});
+$('website-list').addEventListener('dragstart',e=>{const row=e.target.closest('[data-row]');if(!row||row.getAttribute('draggable')!=='true'){e.preventDefault();return;}dragged=row.dataset.row;e.dataTransfer.setData('text/plain',dragged);e.dataTransfer.effectAllowed='move';row.classList.add('dragging');});
+$('website-list').addEventListener('dragover',e=>{const row=e.target.closest('[data-row]');document.querySelectorAll('.drag-target').forEach(x=>x.classList.remove('drag-target'));if(!row||!dragged||row.dataset.row===dragged||!preferences.selected.includes(row.dataset.row))return;if(preferences.pinned.includes(row.dataset.row)!==preferences.pinned.includes(dragged))return;e.preventDefault();e.dataTransfer.dropEffect='move';row.classList.add('drag-target');});
+$('website-list').addEventListener('drop',e=>{e.preventDefault();const row=e.target.closest('[data-row]');if(!row||!dragged||!preferences.selected.includes(row.dataset.row)||preferences.pinned.includes(row.dataset.row)!==preferences.pinned.includes(dragged))return;const ordering=preferences.pinned.includes(dragged)?preferences.pinned:preferences.order;const target=ordering.indexOf(row.dataset.row),origin=ordering.indexOf(dragged);ordering.splice(origin,1);ordering.splice(target,0,dragged);save();dragged=null;renderWebsites();renderOverview();toast('网站顺序已更新。');});
+$('website-list').addEventListener('dragend',()=>{dragged=null;document.querySelectorAll('.dragging,.drag-target').forEach(x=>x.classList.remove('dragging','drag-target'));});
+document.querySelectorAll('[role=tablist]').forEach(list=>list.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const buttons=[...list.querySelectorAll('[role=tab]:not(:disabled)')],index=buttons.indexOf(document.activeElement);if(index<0)return;e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;buttons[next].click();buttons[next].focus();}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('cache-confirm').hidden){$('cancel-clear').click();}});
+render();
+</script>
+</body></html>

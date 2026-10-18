@@ -51,7 +51,7 @@ Built with **AppKit**, native drawing, `URLSession`, and macOS Keychain. The app
 - **Website details:** click a website name or chart for a larger session chart, top pages, and traffic sources.
 - **Native interactions:** chart hover values, keyboard navigation within charts, and return to the previous overview scroll position.
 - **Automatic appearance:** light and dark themes follow macOS, with glass surfaces and warm orange charts.
-- **Stable menu bar item:** fixed width, monospaced digits, compact large numbers, and exact counts in the tooltip.
+- **Native menu bar sizing:** a system square for icon-only mode and content-based width for numbers, with monospaced digits, compact large numbers, and exact counts in the tooltip.
 - **Refresh feedback:** a spinner while loading, a timestamp with seconds, and periodic refresh while the popover is open.
 - **Secure credentials:** API keys are stored in Keychain; website selections and preferences are stored locally.
 
@@ -146,10 +146,10 @@ The app supports **API keys**, not username/password login. Compatibility with o
 
 ### Change a connection or website selection
 
-- The gear button in the popover opens the settings window on the 连接 tab.
+- The gear button opens Settings on the General tab; choose Connection to edit credentials.
 - Leave the API key field empty to reuse the saved key **only when the API base URL is unchanged**.
 - “管理网站” in the overview footer opens the 网站 tab and lists websites for the current connection.
-- Each selected website has a color dot on the 网站 tab; click it to choose that site's chart color from 8 colors. New sites get distinct colors automatically, and colors are saved with 保存并查看.
+- The Websites tab groups pinned, followed and unfollowed websites. Changes save immediately after the initial connection has been committed. Click a color dot to change chart color, pin a website, or reorder within its group using the drag handle or Up/Down buttons. Unpinning restores its ordinary order.
 - Removing a website from the selection does not delete it from Umami.
 - One Umami instance is supported at a time.
 
@@ -157,13 +157,21 @@ The app supports **API keys**, not username/password login. Compatibility with o
 
 UmamiBar is available in English and Simplified Chinese. Choose System, 简体中文 or English under Settings → General → Language; the change applies immediately. System follows your macOS language, and any language other than Chinese falls back to English. UI strings live in `Resources/<lang>.lproj/Localizable.strings`, keyed by the Chinese source text passed to `L("…")`; `tests-release/test_localization.py` fails if a string is missing a translation.
 
+### Daily preferences
+
+General settings provide Launch at Login, language, menu bar display, and local data controls. The login switch reflects the system registration, including an approval-required state; macOS 13+ uses Apple's [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice). macOS 10.15–12 uses an app-specific user LaunchAgent. Enabling it keeps the app in the menu bar without opening a window. Registration must be checked from an installed app; the rendering harness never enables login startup.
+
+Last successful data is saved by default under `~/Library/Application Support/UmamiBar/successful-data.json`, separately for each service, website, period and timezone. A record contains a complete statistics/trend query and its original times, never the API key. Reopening restores matching results before a background refresh. Failed requests do not overwrite successful data; a missing range stays unavailable. Totals across mismatched query windows show “—”.
+
+Open Saved Data to inspect retained ranges or clear them. Turning saving off asks for confirmation and clears stored statistics while keeping the connection and preferences. Already displayed live results can remain in memory. A source website that is unfollowed falls back to total visitors with a status message. Switching credentials clears saved results to avoid reusing another permission scope.
+
 ## Explore your websites
 
 ### Overview
 
 Each website displays visitors, change from the preceding period, a mini session chart, pageviews, bounce rate, and average duration. Hover a chart for bucket values. Click the chart or website name to open details.
 
-The menu bar count is the sum of visitors across selected websites for the active range. Visitors are **not deduplicated across websites**. It is not a live online-user count. Large numbers use compact suffixes; the tooltip retains the exact count.
+The menu bar can show total visitors, visitors for a specific followed website, or just the icon. Icon-only mode uses the system square size; AppKit sizes numeric modes to their contents. Total mode sums visitors across selected websites for the active range. Visitors are **not deduplicated across websites**. It is not a live online-user count. Large numbers use compact suffixes; the tooltip retains the exact count.
 
 ### Website details
 
@@ -232,6 +240,10 @@ xcrun swiftc -parse-as-library \
   Sources/UmamiBar/NativePanel.swift \
   Sources/UmamiBar/API.swift \
   Sources/UmamiBar/SettingsWindow.swift \
+  Sources/UmamiBar/SettingsViews.swift \
+  Sources/UmamiBar/Preferences.swift \
+  Sources/UmamiBar/SnapshotStore.swift \
+  Sources/UmamiBar/LoginLaunch.swift \
   scripts/visual-check.swift \
   -o /tmp/umamibar-native-check
 
@@ -240,6 +252,8 @@ xcrun swiftc -parse-as-library \
 /tmp/umamibar-native-check dark settings-general
 /tmp/umamibar-native-check dark detail --navigation-tests
 ```
+
+For the isolated preference flow, start `python3 scripts/mock-api.py --port 8768`, then run `/tmp/umamibar-native-check light settings-websites --mock=http://127.0.0.1:8768 --preferences-tests`. Add `--language-test` when running from a test bundle containing the localization resources. `--cached --pinned` previews restored overview data. The harness uses isolated preferences and a temporary snapshot directory; login startup is never enabled by tests.
 
 The harness requires a graphical macOS session. It writes PNG previews to `/tmp/native-<appearance>-<screen>.png`. Screens include `overview`, `detail`, `empty`, `settings-connection`, `settings-websites`, and `settings-general`. Setting `UMAMIBAR_MOCK=http://127.0.0.1:PORT` (a local server answering `GET /api/websites` for key `test-key`) drives the real verify → website list flow first; add `--save-test` to also check saving. `--navigation-tests` checks native action dispatch; it is not a full end-to-end network test.
 
@@ -252,7 +266,11 @@ Sources/UmamiBar/
   App.swift          App lifecycle, menu bar, state and request coordination
   Components.swift   Shared painted design system: colors, surface, buttons, inputs
   NativePanel.swift  Popover screens: empty state, overview and details
-  SettingsWindow.swift Settings window: connection, websites and general tabs
+  SettingsWindow.swift Settings tabs and immediate persistence
+  SettingsViews.swift  Native form rows and draggable website controls
+  Preferences.swift    Menu display and connection-scoped website order
+  SnapshotStore.swift  Atomic, scoped successful-result persistence
+  LoginLaunch.swift    System login registration and older-macOS fallback
   ChartView.swift    Chart drawing, hover values and keyboard interactions
   API.swift          HTTP requests, authentication and website pagination
   Models.swift       API models, periods, metrics and URL normalization
@@ -282,7 +300,7 @@ Open [the local prototype](http://127.0.0.1:8765/). Its connection form does not
 - **No traffic sources:** the endpoint may legitimately return no rows for the selected period.
 - **A team website is missing:** discovery uses the websites endpoint; team visibility depends on the server's returned permissions and list.
 - **Old macOS compatibility:** Intel deployment metadata is verified as 10.15, but startup, Keychain, appearance, and rendering still require Catalina hardware validation.
-- **Distribution:** Developer ID signing, notarization, automatic updates, and login-at-startup controls are not implemented.
+- **Distribution:** Release builds support Developer ID signing, notarization and Sparkle updates. Local builds are ad-hoc signed. Actual login startup and Catalina behavior still need installed-app/hardware validation.
 
 See [PRD.md](PRD.md) for the requirements history. Checked-in images under `docs/previews/` are sample-data snapshots and may lag small visual changes.
 

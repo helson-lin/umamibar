@@ -1,12 +1,13 @@
 import AppKit
 
-struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil; var color = 0 }
+struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil; var color = 0; var pinned = false; var rangeStart: Date? = nil; var rangeEnd: Date? = nil; var savedAt: Date? = nil; var cached = false }
 struct PanelState {
     var screen: String; var loading: Bool
     var period: Period; var start: Date; var end: Date; var updated: String
     var sites: [PanelSite]
     var detailID: String? = nil; var breakdown = "pages"; var dimension: DetailDimension = .pages; var rows: [MetricRow]? = nil
     var detailLoading = false; var detailError: String? = nil
+    var hasConnection = false; var hasCachedData = false
 }
 final class NativePanel: FlippedView {
     var onAction: ((String, [String: Any]) -> Void)?
@@ -18,6 +19,7 @@ final class NativePanel: FlippedView {
     private weak var detailScroll: NSScrollView?
     private var detailOffset = NSPoint.zero
     private var previousDetailID: String?
+    private var renderedLanguage = ""
     override func layout() {
         super.layout()
         if bounds.size != renderedSize, bounds.width > 0, let state = state { render(state) }
@@ -34,10 +36,10 @@ final class NativePanel: FlippedView {
         // Data refreshes keep the scroll view and update cards in place, so hover,
         // scroll momentum and in-progress clicks survive; only layout changes rebuild.
         let overviewCards = (overviewScroll?.documentView?.subviews ?? []).compactMap { $0 as? SiteCard }
-        let reuseOverview = next.screen == "overview" && previousScreen == "overview" && overviewScroll != nil
+        let reuseOverview = renderedLanguage == Localization.bundle.bundlePath && next.screen == "overview" && previousScreen == "overview" && overviewScroll != nil
             && overviewCards.map(\.layoutKey) == next.sites.map(SiteCard.layoutKey)
         let reuseDetail = next.screen == "detail" && previousScreen == "detail" && next.detailID == previousDetailID && detailScroll?.documentView is DetailBody
-        renderedSize = bounds.size
+        renderedSize = bounds.size; renderedLanguage = Localization.bundle.bundlePath
         if previousScreen == "overview", let scroll = overviewScroll { overviewOffset = scroll.contentView.bounds.origin }
         if previousScreen == "detail", let scroll = detailScroll { detailOffset = scroll.contentView.bounds.origin }
         if next.detailID != previousDetailID { detailOffset = .zero }
@@ -54,7 +56,7 @@ final class NativePanel: FlippedView {
         state = next
         subviews.forEach { if !(reuseOverview && $0 === overviewScroll) && !(reuseDetail && $0 === detailScroll) { $0.removeFromSuperview() } }
         if next.screen == "empty" {
-            _ = button(L("打开设置"), NSRect(x: 22, y: 104, width: 316, height: 36), style: .primary) { [weak self] in self?.action("settings") }
+            _ = button(next.hasConnection ? L("选择网站") : L("打开设置"), NSRect(x: 22, y: 104, width: 316, height: 36), style: .primary) { [weak self] in self?.action(next.hasConnection ? "manage" : "settings") }
             _ = button(L("退出 UmamiBar"), NSRect(x: 22, y: 148, width: 316, height: 36), style: .destructive) { [weak self] in self?.action("quit") }
         } else if next.screen == "detail", let selected = next.sites.first(where: { $0.website.id == next.detailID }) {
             let back = button("‹", NSRect(x: 20, y: 20, width: 29, height: 29), style: .navigation) { [weak self] in self?.action("back") }
@@ -100,7 +102,12 @@ final class NativePanel: FlippedView {
                 scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
                 let document = FlippedView(); var y: CGFloat = 0
                 for (i, site) in next.sites.enumerated() {
-                    let height: CGFloat = 218 + (site.error == nil ? 0 : 30)
+                    if (i == 0 && site.pinned) || (i > 0 && next.sites[i-1].pinned && !site.pinned) {
+                        let label = NSTextField(labelWithString: site.pinned ? L("置顶") : L("其他网站"))
+                        label.font = .systemFont(ofSize: 10); label.textColor = Ink.secondary
+                        label.frame = NSRect(x: 20, y: y + 7, width: 320, height: 15); document.addSubview(label); y += 24
+                    }
+                    let height: CGFloat = 218 + (site.error != nil || site.cached ? 30 : 0)
                     let card = SiteCard(frame: NSRect(x: 0, y: y, width: 360, height: height), site: site, index: i, state: next)
                     card.open = { [weak self] in self?.action("detail", ["id": site.website.id]) }; document.addSubview(card); y += height
                 }
@@ -115,11 +122,12 @@ final class NativePanel: FlippedView {
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; subviews.forEach { $0.needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) {
-        drawSurface(bounds, radius: 18)
+        // Fill every corner beneath NSPopover's native outline instead of adding a second rounded edge.
+        drawSurface(bounds, radius: 0)
         guard let s = state else { return }
         if s.screen == "empty" {
-            text(L("连接 Umami"), NSRect(x: 22, y: 22, width: 300, height: 22), size: 15, weight: .semibold)
-            text(L("在设置中填写服务地址和 API Key，并选择要关注的网站。"), NSRect(x: 22, y: 55, width: 316, height: 32), color: Ink.secondary)
+            text(s.hasConnection ? L("选择关注的网站") : L("连接 Umami"), NSRect(x: 22, y: 22, width: 300, height: 22), size: 15, weight: .semibold)
+            text(s.hasConnection ? L("在网站设置中勾选要关注的网站，即可查看访问趋势。") : L("在设置中填写服务地址和 API Key，并选择要关注的网站。"), NSRect(x: 22, y: 55, width: 316, height: 32), color: Ink.secondary)
         } else if s.screen == "detail", let site = s.sites.first(where: { $0.website.id == s.detailID }) {
             text(site.website.name, NSRect(x: 60, y: 19, width: 240, height: 18), size: 13, weight: .semibold)
             text(site.website.domain, NSRect(x: 60, y: 40, width: 240, height: 16), size: 10, color: Ink.secondary)
@@ -143,7 +151,7 @@ final class NativePanel: FlippedView {
             shade?.draw(in: NSRect(x: 0, y: footerTop - 6, width: bounds.width, height: 6), angle: 270)
             fill(NSRect(x: 0, y: footerTop, width: bounds.width, height: 0.5), Ink.line)
             fill(NSRect(x: 0, y: footerTop + 0.5, width: bounds.width, height: 0.5), NSColor.white.withAlphaComponent(Ink.dark ? 0.025 : 0.8))
-            fill(NSRect(x: 21, y: bounds.height-22, width: 4, height: 4), Ink.green, radius: 2)
+            fill(NSRect(x: 21, y: bounds.height-22, width: 4, height: 4), s.hasCachedData ? .systemOrange : Ink.green, radius: 2)
             text(s.loading ? L("正在刷新 %ld 个网站…", s.sites.count) : s.updated, NSRect(x: 30, y: bounds.height-28, width: 230, height: 17), size: 10, color: Ink.secondary)
         }
     }
@@ -171,7 +179,7 @@ final class SiteCard: FlippedView {
     private let chart = ChartView(frame: NSRect(x: 20, y: 74, width: 320, height: 65))
     var open: (() -> Void)?
     /// Cards can be updated in place only while the website and card height stay the same.
-    static func layoutKey(_ site: PanelSite) -> String { site.website.id + (site.error == nil ? "" : "#error") }
+    static func layoutKey(_ site: PanelSite) -> String { site.website.id + (site.error == nil ? "" : "#error") + (site.cached ? "#cached" : "") + (site.pinned ? "#pinned" : "") }
     var layoutKey: String { Self.layoutKey(site) }
     init(frame: NSRect, site: PanelSite, index: Int, state: PanelState) {
         self.site = site; self.index = index; self.state = state; super.init(frame: frame)
@@ -184,7 +192,8 @@ final class SiteCard: FlippedView {
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
         if index > 0 { fill(NSRect(x: 20, y: 0, width: 320, height: 0.5), Ink.line) }
-        text(site.website.name, NSRect(x: 20, y: 17, width: 218, height: 17), size: 12, weight: .medium)
+        if site.pinned { drawPin(in: NSRect(x: 20, y: 20, width: 10, height: 11), color: Ink.secondary) }
+        text(site.website.name, NSRect(x: site.pinned ? 35 : 20, y: 17, width: site.pinned ? 203 : 218, height: 17), size: 12, weight: .medium)
         text(site.website.domain, NSRect(x: 20, y: 36, width: 218, height: 16), size: 10, color: Ink.secondary)
         let count = site.total.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"
         let line = NSMutableAttributedString(string: count, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .medium), .foregroundColor: Ink.text])
@@ -192,12 +201,17 @@ final class SiteCard: FlippedView {
         line.draw(at: NSPoint(x: bounds.width - 20 - line.size().width, y: 17))
         drawGrowth(site, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
         do {
-            if site.points == nil { text(state.loading ? L("正在加载…") : L("趋势暂无数据"), NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
+            if site.points == nil { text(state.loading ? L("正在加载…") : site.error != nil && site.total == nil ? L("该范围暂无已保存数据") : L("趋势暂无数据"), NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
             let formatter = Formats.axis(state.period)
-            for (i,date) in [state.start, Date(timeIntervalSince1970: (state.start.timeIntervalSince1970+state.end.timeIntervalSince1970)/2),state.end].enumerated() { text(formatter.string(from: date), NSRect(x: 20+CGFloat(i)*106, y: 145, width: 106, height: 14), size: 9, color: Ink.secondary, alignment: i == 0 ? .left : i == 2 ? .right : .center) }
+            for (i,date) in [(site.rangeStart ?? state.start), Date(timeIntervalSince1970: ((site.rangeStart ?? state.start).timeIntervalSince1970+(site.rangeEnd ?? state.end).timeIntervalSince1970)/2),(site.rangeEnd ?? state.end)].enumerated() { text(formatter.string(from: date), NSRect(x: 20+CGFloat(i)*106, y: 145, width: 106, height: 14), size: 9, color: Ink.secondary, alignment: i == 0 ? .left : i == 2 ? .right : .center) }
         }
         drawStats(site.stats, y: 171)
-        if let error = site.error { text(L("更新失败 · %@", error), NSRect(x: 20, y: bounds.height-25, width: 320, height: 24), size: 10, color: .systemOrange) }
+        if site.error != nil || site.cached {
+            let saved = site.savedAt.map { L("本地数据 · %@ 保存", Formats.range.string(from: $0)) }
+            let note = saved ?? site.error.map { L("更新失败 · %@", $0) } ?? ""
+            text(note, NSRect(x: 20, y: bounds.height-25, width: 320, height: 24), size: 9, color: .systemOrange)
+            toolTip = [site.error, saved].compactMap { $0 }.joined(separator: "\n")
+        } else { toolTip = nil }
     }
 }
 final class DetailBody: FlippedView {

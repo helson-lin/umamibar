@@ -38,9 +38,9 @@ struct Website: Codable, Equatable {
     let name: String
     let domain: String
 }
-struct Point: Decodable { let x: String; let y: Double }
+struct Point: Codable { let x: String; let y: Double }
 struct Series: Decodable { let sessions: [Point] }
-struct Stats: Decodable {
+struct Stats: Codable {
     let visitors: Int
     let pageviews: Int?
     let visits: Int?
@@ -61,6 +61,14 @@ struct Stats: Decodable {
         bounces = try number(.bounces).map(Int.init)
         totalTime = try number(.totaltime)
     }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(visitors, forKey: .visitors)
+        try c.encodeIfPresent(pageviews, forKey: .pageviews)
+        try c.encodeIfPresent(visits, forKey: .visits)
+        try c.encodeIfPresent(bounces, forKey: .bounces)
+        try c.encodeIfPresent(totalTime, forKey: .totaltime)
+    }
     private struct LegacyCount: Decodable { let value: Double }
     var bounceText: String {
         guard let visits = visits, visits > 0, let bounces = bounces else { return "—" }
@@ -78,7 +86,7 @@ struct Stats: Decodable {
         return L("%@ %.1f%% 较上期", percent > 0 ? "↑" : percent < 0 ? "↓" : "—", abs(percent))
     }
 }
-struct MetricRow: Decodable {
+struct MetricRow: Codable {
     let x: String?
     let y: Double
 }
