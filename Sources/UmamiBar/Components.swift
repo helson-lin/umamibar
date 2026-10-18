@@ -171,6 +171,10 @@ final class GlassInput: FlippedView, NSTextFieldDelegate {
         field.delegate = self; addSubview(field)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+    override func layout() {
+        super.layout()
+        field.frame = NSRect(x: 11, y: max(0, (bounds.height - 19) / 2), width: max(0, bounds.width - 22), height: 19)
+    }
     var onChange: (() -> Void)?
     func controlTextDidChange(_ notification: Notification) { onChange?() }
     func controlTextDidBeginEditing(_ notification: Notification) { focused = true; needsDisplay = true }
@@ -183,31 +187,11 @@ final class GlassInput: FlippedView, NSTextFieldDelegate {
         if focused { Ink.green.withAlphaComponent(0.12).setStroke(); let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), xRadius: 6, yRadius: 6); ring.lineWidth = 2; ring.stroke() }
     }
 }
-final class WebsiteChoice: NSButton {
-    let website: Website
-    init(_ website: Website, frame: NSRect, target: AnyObject, action: Selector) {
-        self.website = website; super.init(frame: frame)
-        setButtonType(.switch); isBordered = false; self.target = target; self.action = action
-        identifier = NSUserInterfaceItemIdentifier(website.id)
-        setAccessibilityLabel(website.name + " · " + website.domain)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
-    override var isFlipped: Bool { true }
-    override func draw(_ dirtyRect: NSRect) {
-        let box = NSRect(x: 0.5, y: 17, width: 13, height: 13)
-        fill(box, state == .on ? Ink.green : NSColor(white: 0.5, alpha: 0.06), radius: 3)
-        if state == .on { NSColor.white.setStroke(); let check = NSBezierPath(); check.lineWidth = 1.5; check.lineCapStyle = .round; check.move(to: NSPoint(x: 3, y: 23)); check.line(to: NSPoint(x: 6, y: 26)); check.line(to: NSPoint(x: 11, y: 20)); check.stroke() }
-        else { Ink.secondary.withAlphaComponent(0.4).setStroke(); NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3).stroke() }
-        // Leave room on the right for the color dot of a selected site.
-        text(website.name, NSRect(x: 24, y: 10, width: bounds.width-64, height: 17), size: 12)
-        text(website.domain, NSRect(x: 24, y: 29, width: bounds.width-64, height: 15), size: 10, color: Ink.secondary)
-        fill(NSRect(x: 0, y: bounds.height-0.5, width: bounds.width, height: 0.5), Ink.line)
-    }
-}
 /// Chart color dot on a selected website row; clicking it opens a menu of palette colors.
 final class ColorSwatch: NSButton {
     var color: Int { didSet { needsDisplay = true; setAccessibilityValue(Palette.name(color)) } }
     var onPick: ((Int) -> Void)?
+    var diameter: CGFloat = 14
     private var hovering = false
     private var area: NSTrackingArea?
     init(color: Int, frame: NSRect) {
@@ -238,10 +222,21 @@ final class ColorSwatch: NSButton {
     @objc private func pick(_ item: NSMenuItem) { color = item.tag; onPick?(item.tag) }
     override func draw(_ dirtyRect: NSRect) {
         if hovering || isHighlighted { fill(bounds.insetBy(dx: 1, dy: 1), NSColor(white: Ink.dark ? 1 : 0, alpha: isHighlighted ? 0.09 : 0.05), radius: bounds.height / 2) }
-        let dot = NSRect(x: bounds.midX - 7, y: bounds.midY - 7, width: 14, height: 14)
+        let dot = NSRect(x: bounds.midX - diameter/2, y: bounds.midY - diameter/2, width: diameter, height: diameter)
         let swatch = Palette.swatch(color)
         NSGradient(starting: swatch.top, ending: swatch.base)?.draw(in: NSBezierPath(ovalIn: dot), angle: 90)
         NSColor(white: Ink.dark ? 1 : 0, alpha: 0.12).setStroke(); NSBezierPath(ovalIn: dot.insetBy(dx: 0.25, dy: 0.25)).stroke()
     }
 }
 
+
+/// Drawn locally for Catalina, which predates SF Symbols in NSImage.
+func drawPin(in rect: NSRect, color: NSColor) {
+    NSGraphicsContext.saveGraphicsState()
+    let t = AffineTransform(translationByX: rect.minX, byY: rect.minY)
+    let p = NSBezierPath(); p.move(to: NSPoint(x: 2, y: 0)); p.line(to: NSPoint(x: 8, y: 0))
+    p.line(to: NSPoint(x: 7, y: 4)); p.line(to: NSPoint(x: 10, y: 7)); p.line(to: NSPoint(x: 0, y: 7)); p.line(to: NSPoint(x: 3, y: 4)); p.close()
+    p.move(to: NSPoint(x: 5, y: 7)); p.line(to: NSPoint(x: 5, y: 11)); p.transform(using: t)
+    p.lineWidth = 1; p.lineJoinStyle = .round; color.setStroke(); p.stroke()
+    NSGraphicsContext.restoreGraphicsState()
+}

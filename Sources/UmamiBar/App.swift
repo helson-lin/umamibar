@@ -17,6 +17,7 @@ struct UmamiBarMain {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var item: NSStatusItem!
     private let popover = NSPopover()
+    private let cacheIndicator = CacheIndicator(frame: .zero)
     private var controller: MainController!
     private let settings = SettingsWindowController()
     private var updater: SPUStandardUpdaterController!
@@ -29,13 +30,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         controller = MainController()
         controller.onOpenSettings = { [weak self] tab in self?.openSettings(tab) }
         settings.onSave = { [weak self] connection, sites, colors in try self?.controller.apply(connection, sites: sites, colors: colors) }
-        controller.onTotal = { [weak self] total, period in
-            // Also called again on a language change, so the tooltip follows it.
-            self?.item.button?.title = " " + Self.menuCount(total)
-            let exact = total.map { String($0) } ?? L("正在更新")
-            self?.item.button?.toolTip = L("Umami · %@ · %@ · 已选网站访客合计（跨站未去重）", period.title, exact)
+        controller.onSummary = { [weak self] summary in
+            self?.item?.button?.title = summary.title
+            self?.item?.button?.imagePosition = summary.title.isEmpty ? .imageOnly : .imageLeft
+            self?.item?.button?.toolTip = summary.tooltip
+            self?.item?.button?.setAccessibilityLabel(summary.tooltip)
+            self?.item?.button?.alignment = summary.title.isEmpty ? .center : .left
+            self?.item?.length = summary.title.isEmpty ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            if let self = self, let button = self.item?.button {
+                button.layoutSubtreeIfNeeded()
+                let rect = button.cell?.imageRect(forBounds: button.bounds) ?? .zero
+                self.cacheIndicator.frame = NSRect(x: rect.maxX - 3, y: rect.maxY - 3, width: 3, height: 3)
+                self.cacheIndicator.isHidden = !summary.cached
+            }
         }
-        item = NSStatusBar.system.statusItem(withLength: 80)
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in
             NSColor.labelColor.setFill()
             for (x, height) in [(1.0, 7.0), (6.0, 13.0), (11.0, 10.0)] {
@@ -48,11 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         item.button?.alignment = .left
         item.button?.imagePosition = .imageLeft
         item.button?.target = self; item.button?.action = #selector(toggle)
+        cacheIndicator.isHidden = true; item.button?.addSubview(cacheIndicator)
         popover.contentViewController = controller; popover.behavior = .transient; popover.delegate = self
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             guard let self = self, self.popover.isShown else { return }; self.controller.refreshIfNeeded()
         }
-        if controller.connection == nil { openSettings(.connection) }
+        controller.updateMenu()
+        controller.refreshIfNeeded()
+        if controller.connection == nil, !CommandLine.arguments.contains("--launch-at-login") { openSettings(.connection) }
     }
     private func openSettings(_ tab: SettingsWindowController.Tab) {
         popover.performClose(nil)
@@ -75,15 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         for menu in [app, edit, window] { let item = NSMenuItem(); item.submenu = menu; main.addItem(item) }
         return main
     }
-    private static func menuCount(_ count: Int?) -> String {
-        guard let count = count else { return "—" }
-        guard count >= 10_000 else { return String(count) }
-        let units = ["K", "M", "B", "T", "P", "E"]
-        var value = Double(count) / 1_000
-        var unit = 0
-        while value >= 999.95 && unit < units.count - 1 { value /= 1_000; unit += 1 }
-        return String(format: "%.1f%@", locale: Locale(identifier: "en_US_POSIX"), value, units[unit])
-    }
     @objc private func toggle() {
         if popover.isShown { popover.performClose(nil) }
         else if let button = item.button {
@@ -94,201 +97,254 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 }
 
-// Pure AppKit panel; all controls and charts are drawn locally.
+// Pure AppKit panel; each saved record is scoped to one connection, period and query window.
 final class MainController: NSViewController {
-    var onTotal: ((Int?, Period) -> Void)?
+    var onSummary: ((MenuSummary) -> Void)?
     var onOpenSettings: ((SettingsWindowController.Tab) -> Void)?
-    private let api = API()
+    private let api: API
+    private let preferences: Preferences
+    private let snapshots: SnapshotStore
     private var panel: NativePanel!
     private(set) var connection: Connection?
     private(set) var sites: [Website] = []
-    /// Chart palette index per website ID.
     private(set) var colors: [String: Int] = [:]
-    private var period = Period(rawValue: UserDefaults.standard.integer(forKey: "period")) ?? .day
-    private var screen = "empty"
-    private var loading = false
-    private var ready = false
+    private var period: Period
+    private var screen = "empty", loading = false, ready = false, paused = false
     private var generation = UUID()
     private var tasks: [URLSessionDataTask] = []
-    private var lastUpdate: Date?
+    private var lastAttempt: Date?
     private var end = Date()
-    private var paused = false
-    private var cache: [String: (Int, [Point])] = [:]
+    private var records: [String: SiteSnapshot] = [:]
+    private var memory: [Int: [String: SiteSnapshot]] = [:]
+    private var stale = Set<String>()
     private var errors: [String: String] = [:]
-    private var statistics: [String: Stats] = [:]
-    private var previousVisitors: [String: Int] = [:]
-    private var detailID: String?
-    private var breakdown = "pages"
-    private var dimension: DetailDimension = .pages
-    private var utmDimension: DetailDimension = .utmSource
-    private var locationDimension: DetailDimension = .country
-    private var detailRows: [MetricRow]?
-    private var detailError: String?
-    private var detailLoading = false
-    private var detailToken = UUID()
+    private var detailID: String?, detailRows: [MetricRow]?, detailError: String?
+    private var breakdown = "pages", dimension: DetailDimension = .pages
+    private var utmDimension: DetailDimension = .utmSource, locationDimension: DetailDimension = .country
+    private var detailLoading = false, detailToken = UUID()
     private var detailTask: URLSessionDataTask?
+    private var observers: [NSObjectProtocol] = []
 
-    init() {
+    init(preferences: Preferences = .shared, snapshots: SnapshotStore = .shared, api: API = API(), connectionOverride: Connection? = nil, selectedSites: [Website] = []) {
+        self.preferences = preferences; self.snapshots = snapshots; self.api = api
+        period = Period(rawValue: preferences.defaults.integer(forKey: "period")) ?? .day
         super.init(nibName: nil, bundle: nil)
-        if let address = UserDefaults.standard.string(forKey: "server"), let base = try? Connection.baseURL(address), let key = Keychain.read() {
+        if let override = connectionOverride { connection = override; sites = selectedSites }
+        else if let address = preferences.defaults.string(forKey: "server"), let base = try? Connection.baseURL(address), let key = Keychain.read() {
             connection = Connection(base: base, key: key)
-            if let data = UserDefaults.standard.data(forKey: "sites"), let saved = try? JSONDecoder().decode([Website].self, from: data) { sites = saved }
+            if let data = preferences.defaults.data(forKey: "sites"), let saved = try? JSONDecoder().decode([Website].self, from: data) { sites = saved }
         }
-        // Installs from before per-site colors have none saved; fill gives each site a distinct color.
-        colors = SiteColors.fill(sites.map(\.id), saved: UserDefaults.standard.dictionary(forKey: SiteColors.key) as? [String: Int] ?? [:], count: Palette.swatches.count)
+        colors = SiteColors.fill(sites.map(\.id), saved: preferences.defaults.dictionary(forKey: SiteColors.key) as? [String: Int] ?? [:], count: Palette.swatches.count)
+        sortSites(); restore()
         screen = sites.isEmpty ? "empty" : "overview"
-        // publish() is a no-op until the popover view loads; the tooltip updates either way.
-        NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { [weak self] _ in
-            guard let self = self else { return }; self.publish(); if self.total != nil { self.report(self.total) }
-        }
+        _ = preferences.reconcileMenuSource(selected: sites.map(\.id))
+        observers.append(NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { [weak self] _ in self?.publish() })
+        observers.append(NotificationCenter.default.addObserver(forName: Preferences.changed, object: preferences, queue: .main) { [weak self] _ in self?.sortSites(); self?.publish() })
     }
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
-
-    /// Last menu bar total, kept so the tooltip can be re-rendered in a new language.
-    private var total: Int?
-    private func report(_ value: Int?) { total = value; onTotal?(value, period) }
-
+    var isRefreshing: Bool { loading }
+    func updateMenu() {
+        onSummary?(MenuSummary.make(mode: preferences.menuDisplay, websiteID: preferences.menuWebsiteID, sites: sites, records: records, period: period, stale: stale))
+    }
+    private func sortSites() {
+        guard let base = connection?.base else { return }
+        sites = preferences.layout(for: base, available: sites.map(\.id)).sorted(sites)
+    }
+    private func restore() {
+        if let values = memory[period.rawValue] { records = values }
+        else if preferences.retainData, let base = connection?.base { records = snapshots.records(base: base, period: period) }
+        else { records = [:] }
+        records = records.filter { id, value in sites.contains { $0.id == id } && value.timezone == TimeZone.current.identifier }
+        stale = Set(records.keys)
+        end = records.values.map(\.end).max() ?? Date()
+    }
     override func loadView() {
         let material = NSVisualEffectView()
         material.material = .popover; material.blendingMode = .behindWindow; material.state = .active
         panel = NativePanel(); panel.translatesAutoresizingMaskIntoConstraints = false
-        // Layer-backed so screen changes can slide; clip to the 18pt surface so content never slides outside it.
-        panel.wantsLayer = true; panel.layer?.masksToBounds = true; panel.layer?.cornerRadius = 18
+        // The system popover alone owns the outer rounded outline.
+        panel.wantsLayer = true; panel.layer?.masksToBounds = true
         panel.onAction = { [weak self] action, values in self?.handle(action, body: values) }
         material.addSubview(panel)
         NSLayoutConstraint.activate([panel.leadingAnchor.constraint(equalTo: material.leadingAnchor), panel.trailingAnchor.constraint(equalTo: material.trailingAnchor), panel.topAnchor.constraint(equalTo: material.topAnchor), panel.bottomAnchor.constraint(equalTo: material.bottomAnchor)])
-        view = material
-        preferredContentSize = NSSize(width: 360, height: min(640, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
-        ready = true; publish()
+        view = material; ready = true; publish()
     }
     private func handle(_ action: String, body: [String: Any]) {
         switch action {
-        case "ready": ready = true; publish(); refreshIfNeeded()
-        case "settings": onOpenSettings?(.connection)
+        case "settings": onOpenSettings?(.general)
         case "manage": onOpenSettings?(.websites)
-        case "back": if !sites.isEmpty { detailTask?.cancel(); detailToken = UUID(); detailID = nil; screen = "overview"; publish(); refreshIfNeeded() }
+        case "back": detailTask?.cancel(); detailToken = UUID(); detailID = nil; screen = sites.isEmpty ? "empty" : "overview"; publish(); refreshIfNeeded()
         case "detail":
             guard let id = body["id"] as? String, sites.contains(where: { $0.id == id }) else { return }
             detailID = id; screen = "detail"; breakdown = "pages"; dimension = .pages; detailRows = nil; publish(); loadBreakdown()
         case "breakdown":
             guard let value = body["value"] as? String, ["pages", "sources", "utm", "location"].contains(value) else { return }
-            breakdown = value
-            dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : .pages
+            breakdown = value; dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : .pages
             loadBreakdown()
         case "dimension":
             guard let raw = body["value"] as? String, let value = DetailDimension(rawValue: raw), value.category == breakdown else { return }
             dimension = value
-            if breakdown == "utm" { utmDimension = value }
-            if breakdown == "location" { locationDimension = value }
+            if breakdown == "utm" { utmDimension = value }; if breakdown == "location" { locationDimension = value }
             loadBreakdown()
         case "detailRetry": loadBreakdown()
         case "refresh": refresh()
         case "period":
-            guard let raw = body["value"] as? Int, let value = Period(rawValue: raw) else { return }
-            cancel(); period = value; UserDefaults.standard.set(raw, forKey: "period")
-            cache = [:]; statistics = [:]; previousVisitors = [:]; detailRows = nil; errors = [:]; lastUpdate = nil; paused = false; report(nil); refresh()
+            guard let raw = body["value"] as? Int, let value = Period(rawValue: raw), value != period else { return }
+            memory[period.rawValue] = records; cancel(); period = value; preferences.defaults.set(raw, forKey: "period")
+            detailRows = nil; errors = [:]; lastAttempt = nil; paused = false; restore(); publish(); refresh()
         case "dashboard":
             if let id = body["id"] as? String, let site = sites.first(where: { $0.id == id }), let url = connection?.dashboard(site) { NSWorkspace.shared.open(url) }
         case "quit": NSApp.terminate(nil)
         default: break
         }
     }
-    private func cancel() { detailToken = UUID(); detailTask?.cancel(); detailLoading = false; generation = UUID(); tasks.forEach { $0.cancel() }; tasks = []; loading = false }
-    /// Persists a connection verified in the settings window and shows its websites.
+    private func cancel() {
+        detailToken = UUID(); detailTask?.cancel(); detailLoading = false; generation = UUID()
+        tasks.forEach { $0.cancel() }; tasks = []; loading = false
+    }
     func apply(_ proposed: Connection, sites selected: [Website], colors chosen: [String: Int]) throws {
-        try Keychain.save(proposed.key)
-        UserDefaults.standard.set(proposed.base.absoluteString, forKey: "server")
-        UserDefaults.standard.set(try JSONEncoder().encode(selected), forKey: "sites")
-        UserDefaults.standard.set(chosen, forKey: SiteColors.key)
-        cancel(); connection = proposed; sites = selected; colors = chosen
-        cache = [:]; statistics = [:]; previousVisitors = [:]; errors = [:]; lastUpdate = nil; paused = false
-        detailID = nil; detailRows = nil; screen = "overview"; report(nil)
-        publish(); refresh()
+        let changedConnection = connection?.base != proposed.base || connection?.key != proposed.key
+        if changedConnection {
+            // A rotated key may have different permissions; never expose data saved with the old credentials.
+            let oldKey = connection?.key
+            try Keychain.save(proposed.key)
+            do { try snapshots.clear() }
+            catch {
+                if let oldKey = oldKey { try? Keychain.save(oldKey) } else { Keychain.delete() }
+                throw error
+            }
+        }
+        let data = try JSONEncoder().encode(selected)
+        preferences.defaults.set(proposed.base.absoluteString, forKey: "server")
+        preferences.defaults.set(data, forKey: "sites")
+        let savedColors = preferences.defaults.dictionary(forKey: SiteColors.key) as? [String: Int] ?? [:]
+        preferences.defaults.set(savedColors.merging(chosen, uniquingKeysWith: { _, new in new }), forKey: SiteColors.key)
+        let oldIDs = Set(sites.map(\.id))
+        connection = proposed; sites = selected; colors = chosen; sortSites()
+        _ = preferences.reconcileMenuSource(selected: sites.map(\.id))
+        if changedConnection {
+            cancel(); records = [:]; memory = [:]; stale = []; errors = [:]; lastAttempt = nil; paused = false
+        } else {
+            records = records.filter { id, _ in sites.contains { $0.id == id } }
+            if preferences.retainData {
+                let restored = snapshots.records(base: proposed.base, period: period)
+                for id in sites.map(\.id) where records[id] == nil { if let record = restored[id] { records[id] = record; stale.insert(id) } }
+            }
+        }
+        if let id = detailID, !sites.contains(where: { $0.id == id }) { detailTask?.cancel(); detailToken = UUID(); detailID = nil }
+        screen = sites.isEmpty ? "empty" : detailID == nil ? "overview" : "detail"
+        publish()
+        if changedConnection || oldIDs != Set(sites.map(\.id)) { cancel(); paused = false; refresh() }
     }
     private func publish() {
+        updateMenu()
         guard ready else { return }
-        let updated = lastUpdate.map { errors.isEmpty ? L("%@ 已刷新", Formats.time.string(from: $0)) : L("更新失败 · 保留上次数据") } ?? L("等待更新")
-        let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: end), end: end, updated: updated, sites: sites.map { site in
-            let data = cache[site.id]
-            return PanelSite(website: site, total: statistics[site.id]?.visitors ?? data?.0, points: data?.1, error: errors[site.id], stats: statistics[site.id], previousVisitors: previousVisitors[site.id], color: colors[site.id] ?? 0)
-        }, detailID: detailID, breakdown: breakdown, dimension: dimension, rows: detailRows, detailLoading: detailLoading, detailError: detailError)
-        let desiredHeight: CGFloat = screen == "empty" ? 206 : 640
-        preferredContentSize = NSSize(width: 360, height: min(desiredHeight, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
+        let latest = records.values.map(\.savedAt).max()
+        let hasStale = sites.contains { stale.contains($0.id) && records[$0.id] != nil }
+        let updated: String
+        if hasStale { updated = L("本地数据 · %@", latest.map { Formats.time.string(from: $0) } ?? "—") }
+        else if !errors.isEmpty { updated = L("更新失败 · 保留上次数据") }
+        else { updated = latest.map { L("%@ 已刷新", Formats.time.string(from: $0)) } ?? L("等待更新") }
+        let layout = connection.map { preferences.layout(for: $0.base, available: sites.map(\.id)) } ?? WebsiteLayout()
+        let displayedEnd = detailID.flatMap { records[$0]?.end } ?? (Set(records.values.map(\.end)).count == 1 ? records.values.first?.end ?? end : end)
+        let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: displayedEnd), end: displayedEnd, updated: updated, sites: sites.map { site in
+            let value = records[site.id]
+            return PanelSite(website: site, total: value?.stats.visitors, points: value?.points, error: errors[site.id], stats: value?.stats, previousVisitors: value?.previousVisitors, color: colors[site.id] ?? 0, pinned: layout.pinned.contains(site.id), rangeStart: value?.start, rangeEnd: value?.end, savedAt: value?.savedAt, cached: stale.contains(site.id) && value != nil)
+        }, detailID: detailID, breakdown: breakdown, dimension: dimension, rows: detailRows, detailLoading: detailLoading, detailError: detailError, hasConnection: connection != nil, hasCachedData: hasStale)
+        preferredContentSize = NSSize(width: 360, height: min(screen == "empty" ? 206 : 640, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
         panel.render(state)
     }
     func refreshIfNeeded() {
-        guard ready, ["overview", "detail"].contains(screen), !paused, !loading, lastUpdate.map({ Date().timeIntervalSince($0) >= 60 }) ?? true else { return }
+        // Startup runs this before the view is loaded so a recovered menu count updates in the background.
+        guard ["overview", "detail"].contains(screen), !paused, !loading, lastAttempt.map({ Date().timeIntervalSince($0) >= 60 }) ?? true else { return }
         refresh()
     }
     private func refresh() {
-        guard ["overview", "detail"].contains(screen), !loading, let connection = connection, !sites.isEmpty else { return }
-        loading = true; errors = [:]; end = Date(); let query = period.query(end: end)
-        let token = UUID(); generation = token; if screen == "detail" { loadBreakdown() }; publish()
+        guard !loading, let connection = connection, !sites.isEmpty else { return }
+        loading = true; errors = [:]; end = Date(); let queryEnd = end, token = UUID(), requestedPeriod = period
+        generation = token; lastAttempt = Date(); stale.formUnion(records.keys)
+        let query = requestedPeriod.query(end: queryEnd)
         var queue = sites
-        // Visitors fetched in this round only; failed sites must not contribute stale values to the total.
-        var fresh: [String: Int] = [:]
         var blocked = false
-        func record(_ error: Error, for site: Website) {
+        func failure(_ error: Error, site: Website) {
             errors[site.id] = error.localizedDescription
             if (error as? ServiceError)?.pausesRefresh == true { blocked = true }
         }
+        func finish() {
+            loading = false; tasks = []; paused = blocked; memory[requestedPeriod.rawValue] = records; publish()
+            if screen == "detail" { loadBreakdown() }
+        }
         func next() {
-            guard self.generation == token else { return }
-            guard !queue.isEmpty else {
-                self.loading = false; self.tasks = []; self.lastUpdate = self.end
-                self.paused = blocked
-                self.report(fresh.count == self.sites.count ? fresh.values.reduce(0, +) : nil)
-                self.publish(); return
-            }
-            let site = queue.removeFirst(); let path = "websites/\(site.id)"
-            let task = self.api.get(Stats.self, connection: connection, path: path + "/stats", query: query) { result in
+            guard generation == token else { return }
+            guard !queue.isEmpty, !blocked else { finish(); return }
+            let site = queue.removeFirst()
+            fetch(site, path: "websites/\(site.id)")
+        }
+        func fetch(_ site: Website, path: String) {
+            let task = api.get(Stats.self, connection: connection, path: path + "/stats", query: query) { result in
                 guard self.generation == token else { return }
                 switch result {
-                case .failure(let error): record(error, for: site); self.publish(); next()
+                case .failure(let error): failure(error, site: site); self.publish(); next()
                 case .success(let stats):
-                    self.statistics[site.id] = stats; fresh[site.id] = stats.visitors
-                    let task = self.api.get(Series.self, connection: connection, path: path + "/pageviews", query: query) { result in
+                    let trend = self.api.get(Series.self, connection: connection, path: path + "/pageviews", query: query) { result in
                         guard self.generation == token else { return }
                         switch result {
+                        case .failure(let error): failure(error, site: site); self.publish(); next()
                         case .success(let series):
                             do {
-                                let points = try TimeBuckets.expand(series.sessions, period: self.period, end: self.end, wallClockLabels: true)
-                                self.cache[site.id] = (stats.visitors, points)
-                            } catch { self.errors[site.id] = error.localizedDescription }
-                        case .failure(let error): record(error, for: site)
+                                let points = try TimeBuckets.expand(series.sessions, period: requestedPeriod, end: queryEnd, wallClockLabels: true)
+                                let start = requestedPeriod.start(before: queryEnd), previousEnd = start.addingTimeInterval(-0.001)
+                                let previousStart = start.addingTimeInterval(-queryEnd.timeIntervalSince(start))
+                                let previousQuery = [URLQueryItem(name: "startAt", value: String(Int(previousStart.timeIntervalSince1970 * 1000))), URLQueryItem(name: "endAt", value: String(Int(previousEnd.timeIntervalSince1970 * 1000)))]
+                                let previous = self.api.get(Stats.self, connection: connection, path: path + "/stats", query: previousQuery) { result in
+                                    guard self.generation == token else { return }
+                                    var previousVisitors: Int?
+                                    if case .success(let value) = result { previousVisitors = value.visitors }
+                                    if case .failure(let error) = result, (error as? ServiceError)?.pausesRefresh == true { blocked = true }
+                                    let record = SiteSnapshot(websiteID: site.id, period: requestedPeriod.rawValue, timezone: TimeZone.current.identifier, start: start, end: queryEnd, savedAt: Date(), stats: stats, points: points, previousVisitors: previousVisitors)
+                                    self.records[site.id] = record; self.stale.remove(site.id)
+                                    if self.preferences.retainData { try? self.snapshots.save(record, base: connection.base) }
+                                    self.publish(); next()
+                                }
+                                self.tasks.append(previous)
+                            } catch { failure(error, site: site); self.publish(); next() }
                         }
-                        self.publish()
-                        let start = self.period.start(before: self.end)
-                        let previousEnd = start.addingTimeInterval(-0.001)
-                        let previousStart = start.addingTimeInterval(-self.end.timeIntervalSince(start))
-                        let previousQuery = [URLQueryItem(name: "startAt", value: String(Int(previousStart.timeIntervalSince1970 * 1000))), URLQueryItem(name: "endAt", value: String(Int(previousEnd.timeIntervalSince1970 * 1000)))]
-                        let previousTask = self.api.get(Stats.self, connection: connection, path: path + "/stats", query: previousQuery) { result in
-                            guard self.generation == token else { return }
-                            if case .success(let previous) = result { self.previousVisitors[site.id] = previous.visitors }
-                            else { self.previousVisitors.removeValue(forKey: site.id) }
-                            self.publish(); next()
-                        }
-                        self.tasks.append(previousTask)
-                    }; self.tasks.append(task)
+                    }
+                    self.tasks.append(trend)
                 }
-            }; self.tasks.append(task)
+            }
+            tasks.append(task)
         }
-        next()
+        publish(); next()
     }
-
     private func loadBreakdown() {
         guard let connection = connection, let id = detailID, screen == "detail" else { return }
         detailTask?.cancel(); let token = UUID(); detailToken = token
-        detailLoading = true; detailRows = nil; detailError = nil; publish()
-        let query = period.query(end: end) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: "5")]
+        let detailEnd = records[id]?.end ?? end
+        let restored = preferences.retainData ? snapshots.detail(base: connection.base, websiteID: id, period: period, dimension: dimension, end: detailEnd) : nil
+        detailRows = restored; detailError = nil; detailLoading = restored == nil; publish()
+        let requestedPeriod = period, requestedDimension = dimension
+        let query = period.query(end: detailEnd) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: "5")]
         detailTask = api.get([MetricRow].self, connection: connection, path: "websites/\(id)/metrics", query: query) { [weak self] result in
             guard let self = self, self.detailToken == token, self.detailID == id, self.screen == "detail" else { return }
             self.detailLoading = false
             switch result {
-            case .success(let rows): self.detailRows = Array(rows.sorted { $0.y > $1.y }.prefix(5))
-            case .failure(let error): self.detailError = error.localizedDescription
+            case .success(let rows):
+                self.detailRows = Array(rows.sorted { $0.y > $1.y }.prefix(5))
+                if self.preferences.retainData { try? self.snapshots.saveDetail(DetailSnapshot(websiteID: id, period: requestedPeriod.rawValue, dimension: requestedDimension.rawValue, end: detailEnd, rows: self.detailRows!), base: connection.base) }
+            case .failure(let error):
+                self.detailError = error.localizedDescription
+                // Keep a matching successful breakdown visible on offline refreshes.
+                if self.detailRows != nil { self.detailError = nil }
             }
             self.publish()
         }
     }
+}
+
+
+private final class CacheIndicator: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) { NSColor.systemOrange.setFill(); NSBezierPath(ovalIn: bounds).fill() }
 }

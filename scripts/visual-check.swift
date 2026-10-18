@@ -15,6 +15,12 @@ import AppKit
   state.sites = state.sites.enumerated().map { index, site in
    PanelSite(website: site.website, total: site.total, points: site.points, error: nil, stats: fixture, previousVisitors: [0,30,16][index], color: [0,2,4][index])
   }
+  if CommandLine.arguments.contains("--pinned") { state.sites[0].pinned = true }
+  if CommandLine.arguments.contains("--cached") {
+   state.hasCachedData = true; state.start = state.start.addingTimeInterval(-3600); state.end = state.end.addingTimeInterval(-3600)
+   state.updated = L("本地数据 · %@", Formats.time.string(from: state.end))
+   for i in state.sites.indices { state.sites[i].cached = true; state.sites[i].savedAt = state.end; state.sites[i].rangeStart = state.start; state.sites[i].rangeEnd = state.end }
+  }
   if screen == "detail" { state.detailID = "2"; state.rows = [MetricRow(x:"/docs/quick-start",y:27),MetricRow(x:"/docs/api",y:16),MetricRow(x:"/docs/install",y:10),MetricRow(x:"/docs/guides",y:7),MetricRow(x:"/",y:4)] }
   if let dimensionFlag = CommandLine.arguments.first(where: { $0.hasPrefix("--dimension=") }),
      let dimension = DetailDimension(rawValue: String(dimensionFlag.dropFirst("--dimension=".count))) {
@@ -76,38 +82,82 @@ import AppKit
 /// With UMAMIBAR_MOCK=http://127.0.0.1:PORT it verifies against that server first,
 /// exercising the real connect → website list flow.
 func settingsCheck(appearance: String, screen: String) {
- let settings = SettingsWindowController(); let window = settings.window!
+ let originalLanguage = Localization.choice
+ defer { Localization.set(originalLanguage) }
+ let preferences = Preferences(defaults: UserDefaults(suiteName: "UmamiBar.visual.\(UUID().uuidString)")!)
+ let directory = URL(fileURLWithPath: "/tmp/umamibar-visual-\(UUID().uuidString)")
+ defer { try? FileManager.default.removeItem(at: directory) }
+ let snapshots = SnapshotStore(directory: directory)
+ let settings = SettingsWindowController(preferences: preferences, snapshots: snapshots); let window = settings.window!
  window.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
- var saved: [String] = []
+ var saved: [Website] = []
  var savedColors: [String: Int] = [:]
- settings.onSave = { _, sites, colors in saved = sites.map(\.id); savedColors = colors }
+ settings.onSave = { _, sites, colors in saved = sites; savedColors = colors }
  settings.show(.connection, connection: nil, sites: [], colors: [:])
  func controls<T: NSView>(_ type: T.Type, in view: NSView = window.contentView!) -> [T] { view.subviews.flatMap { ($0 as? T).map { [$0] } ?? [] + controls(type, in: $0) } }
- func tap(_ title: String) { controls(PaintedButton.self).first { $0.title == title }!.performClick(nil) }
- if let mock = ProcessInfo.processInfo.environment["UMAMIBAR_MOCK"] {
+ func tap(_ title: String) {
+  guard let button = controls(PaintedButton.self).first(where: { $0.title == title }) else { fatalError("Missing button: \(title)") }
+  button.performClick(nil)
+ }
+ func popup(_ label: String) -> ActionPopup { controls(ActionPopup.self).first { $0.identifier?.rawValue == label }! }
+ func choose(_ label: String, _ raw: String) {
+  let control = popup(label)
+  control.select(control.itemArray.first { $0.representedObject as? String == raw })
+  NSApp.sendAction(control.action!, to: control.target, from: control)
+ }
+ if let mock = ProcessInfo.processInfo.environment["UMAMIBAR_MOCK"] ?? CommandLine.arguments.first(where: { $0.hasPrefix("--mock=") }).map({ String($0.dropFirst(7)) }) {
   let fields = controls(NSTextField.self).filter { $0.isEditable }
   fields.first { !($0 is NSSecureTextField) }!.stringValue = mock
   fields.first { $0 is NSSecureTextField }!.stringValue = "test-key"
   tap(L("验证并选择网站"))
   let deadline = Date().addingTimeInterval(5)
-  while controls(WebsiteChoice.self).isEmpty && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
-  let checks = controls(WebsiteChoice.self)
+  while controls(WebsiteSettingsRow.self).isEmpty && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+  let checks = controls(CallbackCheckbox.self)
+  precondition(checks.count >= 3, "Website discovery failed")
   print("Websites listed: \(checks.count)")
   if CommandLine.arguments.contains("--save-test") {
    checks.prefix(2).forEach { $0.performClick(nil) }
    tap(L("保存并查看"))
    precondition(saved.count == 2 && !window.isVisible, "Save failed: \(saved)")
-   precondition(Set(savedColors.keys) == Set(saved) && Set(savedColors.values).count == 2, "Colors not saved: \(savedColors)")
-   print("Settings save passed: \(saved) colors \(savedColors)")
+   precondition(Set(savedColors.keys) == Set(saved.map(\.id)) && Set(savedColors.values).count == 2, "Colors not saved")
+   print("Settings save passed: \(saved.map(\.id)) colors \(savedColors)")
    return
   }
-  if screen == "settings-websites" { checks.prefix(3).forEach { $0.performClick(nil) }; precondition(controls(ColorSwatch.self).count == 3, "Swatches missing") }
+  checks.prefix(3).forEach { $0.performClick(nil) }
+  precondition(controls(ColorSwatch.self).count == 3, "Swatches missing")
+  if CommandLine.arguments.contains("--preferences-tests") {
+   tap(L("保存并查看"))
+   let connection = Connection(base: try! Connection.baseURL(mock), key: "test-key")
+   settings.show(.websites, connection: connection, sites: saved, colors: savedColors)
+   let deadline = Date().addingTimeInterval(5)
+   while controls(WebsiteSettingsRow.self).count < 4 && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+   RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+   let first = saved[0], second = saved[1]
+   controls(PinButton.self).first { $0.toolTip == L("置顶 %@", second.name) }!.performClick(nil)
+   controls(PinButton.self).first { $0.toolTip == L("置顶 %@", first.name) }!.performClick(nil)
+   precondition(preferences.layout(for: connection.base, available: saved.map(\.id)).pinned == [second.id, first.id])
+   let row = controls(WebsiteSettingsRow.self).first { $0.website.id == first.id }!
+   row.subviews.compactMap { $0 as? PaintedButton }.first { $0.title == "⌃" }!.performClick(nil)
+   precondition(preferences.layout(for: connection.base, available: saved.map(\.id)).pinned == [first.id, second.id])
+   tap(L("通用")); choose(L("显示内容"), MenuDisplay.website.rawValue); choose(L("指定网站"), second.id)
+   precondition(preferences.menuDisplay == .website && preferences.menuWebsiteID == second.id)
+   let stats = try! JSONDecoder().decode(Stats.self, from: Data(#"{"visitors":3,"pageviews":5}"#.utf8))
+   let end = Date()
+   try! snapshots.save(SiteSnapshot(websiteID: first.id, period: 0, timezone: TimeZone.current.identifier, start: Period.day.start(before: end), end: end, savedAt: end, stats: stats, points: [Point(x: "x", y: 3)], previousVisitors: 2), base: connection.base)
+   let toggle = controls(ActionSwitch.self).first { $0.identifier?.rawValue == L("保留最近成功数据") }!
+   toggle.state = .off; NSApp.sendAction(toggle.action!, to: toggle.target, from: toggle)
+   tap(L("取消")); precondition(preferences.retainData && snapshots.allRecords(base: connection.base).count == 1)
+   let again = controls(ActionSwitch.self).first { $0.identifier?.rawValue == L("保留最近成功数据") }!
+   again.state = .off; NSApp.sendAction(again.action!, to: again.target, from: again)
+   tap(L("关闭并清除")); precondition(!preferences.retainData && snapshots.allRecords(base: connection.base).isEmpty)
+   preferences.retainData = true
+   print("Native pinning, ordering, menu source, and cache confirmation passed")
+  }
  }
  if CommandLine.arguments.contains("--language-test") {
-  // Switching language in 通用 must redraw the open window immediately, then restore "System".
-  tap(L("通用")); tap("English")
+  tap(L("通用")); choose(L("语言"), "en")
   precondition(L("通用") == "General" && controls(PaintedButton.self).contains { $0.title == "General" }, "English not applied")
-  tap(L("跟随系统")); precondition(Localization.choice == "", "System not restored")
+  choose(L("语言"), ""); precondition(Localization.choice == "", "System not restored")
   print("Language switch passed")
  }
  tap(["settings-connection": L("连接"), "settings-websites": L("网站"), "settings-general": L("通用")][screen] ?? L("连接"))

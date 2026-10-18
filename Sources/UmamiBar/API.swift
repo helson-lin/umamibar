@@ -3,9 +3,8 @@ import Foundation
 // Refuse redirects: credentials must never travel to a redirected endpoint.
 final class API: NSObject, URLSessionTaskDelegate {
     private var session: URLSession!
-    override init() {
+    init(configuration config: URLSessionConfiguration = .ephemeral) {
         super.init()
-        let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 20
         config.httpMaximumConnectionsPerHost = 3
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
