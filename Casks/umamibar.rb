@@ -1,6 +1,6 @@
 cask "umamibar" do
-  version "0.1.4"
-  sha256 "b8da1da4294b3f7f572d1f5ed0f9cd10c5bc0542343020ca0ecbf76928a7d4bc"
+  version "0.1.5"
+  sha256 "f3f7adf902e6209132fd33fc5268ffeb11425182b00f8ca6c621b3cb70efce83"
 
   url "https://github.com/helson-lin/umamibar/releases/download/v#{version}/UmamiBar-#{version}-universal.zip"
   name "UmamiBar"
