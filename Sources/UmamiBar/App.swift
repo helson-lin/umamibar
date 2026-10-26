@@ -179,8 +179,8 @@ final class MainController: NSViewController {
             guard let id = body["id"] as? String, sites.contains(where: { $0.id == id }) else { return }
             detailID = id; screen = "detail"; breakdown = "pages"; dimension = .pages; detailRows = nil; publish(); loadBreakdown()
         case "breakdown":
-            guard let value = body["value"] as? String, ["pages", "sources", "utm", "location"].contains(value) else { return }
-            breakdown = value; dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : .pages
+            guard let value = body["value"] as? String, ["pages", "sources", "utm", "location", "events"].contains(value) else { return }
+            breakdown = value; dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : value == "events" ? .events : .pages
             loadBreakdown()
         case "dimension":
             guard let raw = body["value"] as? String, let value = DetailDimension(rawValue: raw), value.category == breakdown else { return }
@@ -325,13 +325,15 @@ final class MainController: NSViewController {
         let restored = preferences.retainData ? snapshots.detail(base: connection.base, websiteID: id, period: period, dimension: dimension, end: detailEnd) : nil
         detailRows = restored; detailError = nil; detailLoading = restored == nil; publish()
         let requestedPeriod = period, requestedDimension = dimension
-        let query = period.query(end: detailEnd) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: "5")]
+        // Events keep every row so shares are of all events; other breakdowns only need the top 5.
+        let limit = dimension == .events ? 500 : 5
+        let query = period.query(end: detailEnd) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: String(limit))]
         detailTask = api.get([MetricRow].self, connection: connection, path: "websites/\(id)/metrics", query: query) { [weak self] result in
             guard let self = self, self.detailToken == token, self.detailID == id, self.screen == "detail" else { return }
             self.detailLoading = false
             switch result {
             case .success(let rows):
-                self.detailRows = Array(rows.sorted { $0.y > $1.y }.prefix(5))
+                self.detailRows = Array(rows.sorted { $0.y > $1.y }.prefix(limit))
                 if self.preferences.retainData { try? self.snapshots.saveDetail(DetailSnapshot(websiteID: id, period: requestedPeriod.rawValue, dimension: requestedDimension.rawValue, end: detailEnd, rows: self.detailRows!), base: connection.base) }
             case .failure(let error):
                 self.detailError = error.localizedDescription

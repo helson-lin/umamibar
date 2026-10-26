@@ -229,8 +229,8 @@ final class DetailBody: FlippedView {
         subviews.filter { $0 !== chart }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
     }
     private func addControls() {
-        for (i, value) in ["pages", "sources", "utm", "location"].enumerated() {
-            let b = PaintedButton([L("热门页面"), L("流量来源"), "UTM", L("位置")][i], frame: NSRect(x: 16+CGFloat(i)*82, y: 301, width: 80, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
+        for (i, value) in ["pages", "sources", "utm", "location", "events"].enumerated() {
+            let b = PaintedButton([L("热门页面"), L("流量来源"), "UTM", L("位置"), L("事件")][i], frame: NSRect(x: 16+CGFloat(i)*66, y: 301, width: 64, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
         }
         if state.breakdown == "utm" || state.breakdown == "location" {
             let popup = NSPopUpButton(frame: NSRect(x: 112, y: 344, width: 228, height: 26), pullsDown: false)
@@ -269,10 +269,11 @@ final class DetailBody: FlippedView {
         let offset: CGFloat = state.breakdown == "utm" || state.breakdown == "location" ? 44 : 0
         if offset > 0 { text(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"), NSRect(x: 20, y: 351, width: 88, height: 16), size: 10, color: Ink.secondary) }
         text(state.dimension.title, NSRect(x: 20, y: 348+offset, width: 160, height: 15), size: 9, color: Ink.secondary)
-        text(L("次数 / 前5项占比"), NSRect(x: 210, y: 348+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
+        text(state.breakdown == "events" ? L("次数 / 占全部事件") : L("次数 / 前5项占比"), NSRect(x: 210, y: 348+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
         if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
         else if let error = state.detailError { text(error, NSRect(x: 20, y: 377+offset, width: 320, height: 24), size: 10, color: .systemOrange) }
         else if let rows = state.rows, !rows.isEmpty {
+            // Events rows cover every event, so their shares are of the total; other breakdowns hold only the top 5.
             let sum = rows.reduce(0) { $0 + $1.y }
             for (i,row) in rows.prefix(5).enumerated() {
                 let y = CGFloat(371+i*32)+offset; let ratio = sum > 0 ? row.y/sum : 0
@@ -281,6 +282,6 @@ final class DetailBody: FlippedView {
                 text("\(Int(row.y))   \(Int((ratio*100).rounded()))%", NSRect(x: 235, y: y+8, width: 97, height: 15), size: 10, alignment: .right)
             }
         } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        text(state.breakdown == "utm" ? L("未携带字段显示「未设置」· 占比按前 5 项计算") : state.breakdown == "location" ? L("缺失位置显示「未知位置」· 占比按前 5 项计算") : L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 535+offset, width: 320, height: 17), size: 9, color: Ink.secondary)
+        text(state.breakdown == "utm" ? L("未携带字段显示「未设置」· 占比按前 5 项计算") : state.breakdown == "location" ? L("缺失位置显示「未知位置」· 占比按前 5 项计算") : state.breakdown == "events" ? L("仅展示前 5 项 · 占比按该时段全部事件计算") : L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 535+offset, width: 320, height: 17), size: 9, color: Ink.secondary)
     }
 }

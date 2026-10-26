@@ -94,6 +94,7 @@ enum DetailDimension: String, CaseIterable {
     case pages = "path", sources = "referrer"
     case utmSource, utmMedium, utmCampaign, utmTerm, utmContent
     case country, region, city
+    case events = "event"
 
     var category: String {
         switch self {
@@ -101,6 +102,7 @@ enum DetailDimension: String, CaseIterable {
         case .sources: return "sources"
         case .utmSource, .utmMedium, .utmCampaign, .utmTerm, .utmContent: return "utm"
         case .country, .region, .city: return "location"
+        case .events: return "events"
         }
     }
     static func options(for category: String) -> [DetailDimension] {
@@ -118,6 +120,7 @@ enum DetailDimension: String, CaseIterable {
         case .country: return L("国家 / 地区")
         case .region: return L("省份 / 州")
         case .city: return L("城市")
+        case .events: return L("事件名称")
         }
     }
     func label(for value: String?, locale: Locale = .current) -> String {
@@ -126,6 +129,7 @@ enum DetailDimension: String, CaseIterable {
             case .pages: return "/"
             case .sources: return L("直接访问")
             case .country, .region, .city: return L("未知位置")
+            case .events: return L("未命名事件")
             default: return L("未设置")
             }
         }

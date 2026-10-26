@@ -16,6 +16,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(DetailDimension.utmCampaign.label(for: nil), L("未设置"))
         XCTAssertEqual(DetailDimension.city.label(for: "  "), L("未知位置"))
         XCTAssertEqual(DetailDimension.sources.label(for: nil), L("直接访问"))
+        XCTAssertEqual(DetailDimension.options(for: "events"), [.events])
+        XCTAssertEqual(DetailDimension.events.label(for: nil), L("未命名事件"))
         XCTAssertEqual(DetailDimension.country.label(for: "US", locale: Locale(identifier: "en_US")), "United States")
         XCTAssertEqual(DetailDimension.city.label(for: "San Francisco"), "San Francisco")
     }

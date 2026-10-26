@@ -188,3 +188,8 @@
 "页面路径" = "Path";
 "验证并选择网站" = "Verify and choose websites";
 "验证成功后，选择网站并保存。" = "After verification, choose websites and save.";
+"事件" = "Events";
+"事件名称" = "Event name";
+"未命名事件" = "Unnamed event";
+"次数 / 占全部事件" = "Count / share of all";
+"仅展示前 5 项 · 占比按该时段全部事件计算" = "Top 5 only · shares are of all events in range";
