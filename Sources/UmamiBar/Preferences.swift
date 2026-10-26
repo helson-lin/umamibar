@@ -71,6 +71,11 @@ final class Preferences {
         get { defaults.string(forKey: "menuWebsiteID") }
         set { defaults.set(newValue, forKey: "menuWebsiteID"); notify() }
     }
+    /// Off by default: turning it on asks for notification permission first.
+    var alertsEnabled: Bool {
+        get { defaults.bool(forKey: "trafficAlerts") }
+        set { defaults.set(newValue, forKey: "trafficAlerts"); notify() }
+    }
     var retainData: Bool {
         get { defaults.object(forKey: "retainSuccessfulData") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "retainSuccessfulData"); notify() }

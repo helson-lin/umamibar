@@ -53,6 +53,7 @@ Built with **AppKit**, native drawing, `URLSession`, and macOS Keychain. The app
 - **Automatic appearance:** light and dark themes follow macOS, with glass surfaces and warm orange charts.
 - **Native menu bar sizing:** a system square for icon-only mode and content-based width for numbers, with monospaced digits, compact large numbers, and exact counts in the tooltip.
 - **Refresh feedback:** a spinner while loading, a timestamp with seconds, and periodic refresh while the popover is open.
+- **Traffic alerts:** optional notifications when a site's traffic drops to zero (often a broken tracking script) or spikes; clicking one opens that site's details.
 - **Secure credentials:** API keys are stored in Keychain; website selections and preferences are stored locally.
 
 > The documentation is available in English and Chinese. The current app interface is in Chinese; an in-app language switch is not implemented.
@@ -244,6 +245,7 @@ xcrun swiftc -parse-as-library \
   Sources/UmamiBar/Preferences.swift \
   Sources/UmamiBar/SnapshotStore.swift \
   Sources/UmamiBar/LoginLaunch.swift \
+  Sources/UmamiBar/TrafficAlerts.swift \
   scripts/visual-check.swift \
   -o /tmp/umamibar-native-check
 
@@ -275,6 +277,7 @@ Sources/UmamiBar/
   API.swift          HTTP requests, authentication and website pagination
   Models.swift       API models, periods, metrics and URL normalization
   TimeBuckets.swift  Sparse-series expansion and timestamp handling
+  TrafficAlerts.swift Drop-to-zero and spike rules, alert de-duplication and notifications
   Keychain.swift     Credential storage
   Diagnostics.swift Optional read-only API diagnostics
 Tests/UmamiBarTests/  Core regression tests

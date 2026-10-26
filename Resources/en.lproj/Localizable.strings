@@ -214,3 +214,13 @@
 "收起" = "Show less";
 "已展开" = "Expanded";
 "已收起" = "Collapsed";
+"流量提醒" = "Traffic alerts";
+"流量异常时通知" = "Notify on unusual traffic";
+"通知未获允许。请在“系统设置 › 通知”中允许 UmamiBar。" = "Notifications aren’t allowed. Allow UmamiBar in System Settings › Notifications.";
+"请从已安装的 UmamiBar.app 开启流量提醒。" = "Turn on traffic alerts from the installed UmamiBar.app.";
+"每 15 分钟检查已关注的网站：最近 3 小时没有访问（平时同一时段有访问），或最近 1 小时会话达到平时的 3 倍且至少 20 次时通知。" = "Checks followed sites every 15 minutes. Notifies when there were no visits in the last 3 hours although that time usually has some, or when the last hour reached 3× its usual sessions (at least 20).";
+"%@ 流量归零" = "%@ traffic dropped to zero";
+"最近 %ld 小时没有访问，平时同一时段约 %ld 次会话。统计脚本可能失效。" = "No visits in the last %ld hours; this time usually brings about %ld sessions. The tracking script may be broken.";
+"%@ 流量激增" = "%@ traffic spike";
+"最近 1 小时 %ld 次会话，平时同一时段几乎没有访问。" = "%ld sessions in the last hour; this hour is usually almost empty.";
+"最近 1 小时 %ld 次会话，约为平时同一时段的 %.1f 倍。" = "%ld sessions in the last hour, about %.1f× the usual for this hour.";

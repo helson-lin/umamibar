@@ -1,5 +1,6 @@
 import AppKit
 import Sparkle
+import UserNotifications
 
 @main
 struct UmamiBarMain {
@@ -14,7 +15,7 @@ struct UmamiBarMain {
         withExtendedLifetime(delegate) {}
     }
 }
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNUserNotificationCenterDelegate {
     private var item: NSStatusItem!
     private let popover = NSPopover()
     private let cacheIndicator = CacheIndicator(frame: .zero)
@@ -67,11 +68,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             guard let self = self else { return }
             if self.popover.isShown { self.controller.refreshIfNeeded(); self.controller.refreshLive() }
             else if self.controller.showsLiveMenu { self.controller.refreshLive(maxAge: 55) }
+            // Traffic alerts run in the background whether or not the popover is open; checkAlerts limits itself to every 15 minutes.
+            self.controller.checkAlerts()
         }
+        if AlertNotifier.available { UNUserNotificationCenter.current().delegate = self }
         controller.updateMenu()
         controller.refreshIfNeeded()
         if controller.showsLiveMenu { controller.refreshLive() }
         if controller.connection == nil, !CommandLine.arguments.contains("--launch-at-login") { openSettings(.connection) }
+    }
+    // Show alerts even while the popover is open; a click opens that site's detail.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if #available(macOS 11.0, *) { completionHandler([.banner, .list, .sound]) } else { completionHandler([.alert, .sound]) }
+    }
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let id = response.notification.request.content.userInfo[AlertNotifier.websiteKey] as? String {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if !self.popover.isShown { self.toggle() }
+                self.controller.openDetail(id)
+            }
+        }
+        completionHandler()
     }
     private func openSettings(_ tab: SettingsWindowController.Tab) {
         popover.performClose(nil)
@@ -138,6 +156,9 @@ final class MainController: NSViewController {
     private var liveFailures = Set<String>()
     private var liveTasks: [URLSessionDataTask] = []
     private var liveAttempt: Date?, liveToken = UUID()
+    private var alertTasks: [URLSessionDataTask] = [], alertAttempt: Date?, alertToken = UUID()
+    private var alertsWereEnabled = false
+    private lazy var alerts = AlertTracker(defaults: preferences.defaults)
 
     init(preferences: Preferences = .shared, snapshots: SnapshotStore = .shared, api: API = API(), connectionOverride: Connection? = nil, selectedSites: [Website] = []) {
         self.preferences = preferences; self.snapshots = snapshots; self.api = api
@@ -153,9 +174,15 @@ final class MainController: NSViewController {
         screen = sites.isEmpty ? "empty" : "overview"
         _ = preferences.reconcileMenuSource(selected: sites.map(\.id))
         observers.append(NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { [weak self] _ in self?.publish() })
+        alertsWereEnabled = preferences.alertsEnabled
         observers.append(NotificationCenter.default.addObserver(forName: Preferences.changed, object: preferences, queue: .main) { [weak self] _ in
-            self?.sortSites(); self?.publish()
-            if self?.showsLiveMenu == true { self?.refreshLive() }
+            guard let self = self else { return }
+            self.sortSites(); self.publish()
+            if self.showsLiveMenu { self.refreshLive() }
+            // Check right away when alerts are switched on, rather than after the first interval.
+            let enabled = self.preferences.alertsEnabled
+            if enabled && !self.alertsWereEnabled { self.checkAlerts(maxAge: 0) } else if !enabled { self.cancelAlerts() }
+            self.alertsWereEnabled = enabled
         })
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
@@ -187,6 +214,38 @@ final class MainController: NSViewController {
             }
             liveTasks.append(task)
         }
+    }
+    /// Checks every selected site for traffic alerts unless a check started within maxAge seconds.
+    /// Failed requests change nothing: an outage is not reported as a drop to zero.
+    func checkAlerts(maxAge: TimeInterval = 15 * 60) {
+        guard preferences.alertsEnabled, let connection = connection, !sites.isEmpty, !paused, alertTasks.isEmpty,
+              alertAttempt.map({ Date().timeIntervalSince($0) >= maxAge }) ?? true else { return }
+        let token = UUID(); alertToken = token; alertAttempt = Date()
+        let window = TrafficAlert.window(before: Date())
+        let query = [URLQueryItem(name: "startAt", value: String(Int(window.start.timeIntervalSince1970 * 1000))),
+                     URLQueryItem(name: "endAt", value: String(Int(window.end.timeIntervalSince1970 * 1000))),
+                     URLQueryItem(name: "unit", value: "hour"), URLQueryItem(name: "timezone", value: TimeZone.current.identifier)]
+        alerts.keep(sites.map(\.id))
+        for site in sites {
+            let task = api.get(Series.self, connection: connection, path: "websites/\(site.id)/pageviews", query: query) { [weak self] result in
+                guard let self = self, self.alertToken == token else { return }
+                self.alertTasks.removeAll { $0.state == .completed || $0.state == .canceling }
+                guard case .success(let series) = result, self.preferences.alertsEnabled,
+                      let hours = try? TimeBuckets.expand(series.sessions, start: window.start, end: window.end, component: .hour, wallClockLabels: true) else { return }
+                for finding in self.alerts.update(websiteID: site.id, findings: TrafficAlert.evaluate(hours.map(\.y))) {
+                    AlertNotifier.post(finding.kind, website: site, finding: finding)
+                }
+            }
+            alertTasks.append(task)
+        }
+    }
+    private func cancelAlerts() {
+        alertToken = UUID(); alertTasks.forEach { $0.cancel() }; alertTasks = []; alertAttempt = nil
+    }
+    /// Opens a site's detail page, e.g. from a clicked notification.
+    func openDetail(_ id: String) {
+        if screen == "detail" && detailID == id { return }
+        handle("detail", body: ["id": id])
     }
     private func cancelLive() {
         liveToken = UUID(); liveTasks.forEach { $0.cancel() }; liveTasks = []; liveAttempt = nil
@@ -272,6 +331,7 @@ final class MainController: NSViewController {
         if changedConnection {
             cancel(); records = [:]; memory = [:]; stale = []; errors = [:]; lastAttempt = nil; paused = false
             cancelLive(); live = [:]; liveFailures = []
+            cancelAlerts(); alerts.keep([])
         } else {
             records = records.filter { id, _ in sites.contains { $0.id == id } }
             live = live.filter { id, _ in sites.contains { $0.id == id } }; liveFailures = liveFailures.filter { id in sites.contains { $0.id == id } }
@@ -283,7 +343,7 @@ final class MainController: NSViewController {
         if let id = detailID, !sites.contains(where: { $0.id == id }) { detailTask?.cancel(); detailToken = UUID(); detailID = nil }
         screen = sites.isEmpty ? "empty" : detailID == nil ? "overview" : "detail"
         publish()
-        if changedConnection || oldIDs != Set(sites.map(\.id)) { cancel(); paused = false; refresh(); cancelLive(); refreshLive() }
+        if changedConnection || oldIDs != Set(sites.map(\.id)) { cancel(); paused = false; refresh(); cancelLive(); refreshLive(); cancelAlerts(); checkAlerts() }
     }
     private func publish() {
         updateMenu()

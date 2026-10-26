@@ -18,7 +18,7 @@ final class SettingsWindowController: NSWindowController {
     private var layout = WebsiteLayout()
     private var generation = UUID(), busy = false, needsConnectionCommit = false
     private var listError: String?, connectionStatus = "", connectionFailed = false, footerStatus = ""
-    private var generalError: String?
+    private var generalError: String?, alertError: String?
     private enum Confirmation { case clear, disable }
     private var confirmation: Confirmation?
     private var showingSavedData = false
@@ -71,7 +71,7 @@ final class SettingsWindowController: NSWindowController {
             generation = UUID(); busy = false
             candidate = nil; available = sites; chosen = Set(sites.map(\.id)); listError = nil; search.stringValue = ""
             server.stringValue = connection?.base.absoluteString ?? "https://api.umami.is/v1"
-            key.stringValue = ""; connectionStatus = ""; connectionFailed = false; generalError = nil
+            key.stringValue = ""; connectionStatus = ""; connectionFailed = false; generalError = nil; alertError = nil
             needsConnectionCommit = false; confirmation = nil; showingSavedData = false; footerStatus = ""
             if let base = connection?.base { layout = preferences.layout(for: base, available: sites.map(\.id)) }
             applyStrings(); window?.center()
@@ -162,9 +162,10 @@ final class SettingsWindowController: NSWindowController {
     }
     @discardableResult
     private func note(_ value: String, at y: CGFloat, in body: NSView) -> CGFloat {
-        let measured = (value as NSString).boundingRect(with: NSSize(width: 376, height: 1000), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: NSFont.systemFont(ofSize: 10)]).height
-        let height = max(18, ceil(measured))
-        settingsLabel(value, in: body, frame: NSRect(x: 32, y: y, width: 376, height: height), size: 10, color: .secondaryLabelColor)
+        let label = settingsLabel(value, in: body, frame: NSRect(x: 32, y: y, width: 376, height: 18), size: 10, color: .secondaryLabelColor)
+        // Measure with the label's own cell: plain string measurement ignores the field's insets and cuts long notes short.
+        let height = max(18, ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 376, height: 1000)).height ?? 18))
+        label.frame.size.height = height
         return height
     }
     private func renderGeneral(in body: FlippedView) {
@@ -210,6 +211,25 @@ final class SettingsWindowController: NSWindowController {
         case .total: menuNote = L("全部已选网站 · 当前时间范围 · 跨站未去重")
         }
         y = menu.frame.maxY + 8; y += note(menuNote, at: y, in: body) + 20
+        let alerts = group(L("流量提醒"), rows: 1, at: y, in: body)
+        rowLabel(L("流量异常时通知"), row: 0, in: alerts)
+        let alertSwitch = ActionSwitch(frame: NSRect(x: 355, y: 12, width: 32, height: 22), label: L("流量异常时通知"), enabled: preferences.alertsEnabled) { [weak self] enabled in
+            guard let self = self else { return }
+            guard enabled else { self.preferences.alertsEnabled = false; self.alertError = nil; self.render(); return }
+            // Only switch on once macOS allows notifications; otherwise say where to allow them.
+            AlertNotifier.requestPermission { granted in
+                self.preferences.alertsEnabled = granted
+                self.alertError = granted ? nil : AlertNotifier.available ? L("通知未获允许。请在“系统设置 › 通知”中允许 UmamiBar。") : L("请从已安装的 UmamiBar.app 开启流量提醒。")
+                self.render()
+            }
+        }
+        alertSwitch.isEnabled = saved != nil; alerts.addSubview(alertSwitch)
+        y = alerts.frame.maxY + 8
+        y += note(L("每 15 分钟检查已关注的网站：最近 3 小时没有访问（平时同一时段有访问），或最近 1 小时会话达到平时的 3 倍且至少 20 次时通知。"), at: y, in: body) + 4
+        if let alertError = alertError {
+            settingsLabel(alertError, in: body, frame: NSRect(x: 32, y: y, width: 376, height: 32), size: 10, color: .systemOrange); y += 34
+        }
+        y += 16
         let data = group(L("本地数据"), rows: 2, at: y, in: body)
         rowLabel(L("保留最近成功数据"), row: 0, in: data)
         data.addSubview(ActionSwitch(frame: NSRect(x: 355, y: 12, width: 32, height: 22), label: L("保留最近成功数据"), enabled: preferences.retainData) { [weak self] enabled in
