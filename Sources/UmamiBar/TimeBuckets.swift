@@ -5,7 +5,7 @@ import Foundation
 enum TimeBuckets {
     static func expand(_ points: [Point], period: Period, end: Date, calendar: Calendar = .current, wallClockLabels: Bool = false) throws -> [Point] {
         let start = period.start(before: end, calendar: calendar)
-        let component: Calendar.Component = period == .day ? .hour : .day
+        let component: Calendar.Component = period.hourly ? .hour : .day
         guard var cursor = calendar.dateInterval(of: component, for: start)?.start else { return [] }
         let iso = ISO8601DateFormatter()
         let local = DateFormatter()

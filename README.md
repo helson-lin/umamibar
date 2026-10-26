@@ -46,7 +46,7 @@ Built with **AppKit**, native drawing, `URLSession`, and macOS Keychain. The app
 ## Features
 
 - **Multiple websites:** visitor totals, compact session charts, and traffic quality metrics in one list.
-- **Three time ranges:** last 24 hours, last 7 days, and last month.
+- **Four time ranges:** today (compared with yesterday up to the same time), last 24 hours, last 7 days, and last month.
 - **Period comparisons:** visitor changes against the preceding interval of equal length, with a separate “New” state when the previous count is zero.
 - **Website details:** click a website name or chart for a larger session chart, top pages, and traffic sources.
 - **Native interactions:** chart hover values, keyboard navigation within charts, and return to the previous overview scroll position.

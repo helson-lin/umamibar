@@ -73,7 +73,7 @@ enum Palette {
 /// Shared date formatters: building a DateFormatter on every draw() is expensive.
 enum Formats {
     static let range = make("MM/dd HH:mm"), hour = make("HH:mm"), day = make("MM/dd"), time = make("HH:mm:ss")
-    static func axis(_ period: Period) -> DateFormatter { period == .day ? hour : day }
+    static func axis(_ period: Period) -> DateFormatter { period.hourly ? hour : day }
     private static func make(_ format: String) -> DateFormatter {
         let formatter = DateFormatter(); formatter.dateFormat = format; formatter.timeZone = .autoupdatingCurrent; return formatter
     }

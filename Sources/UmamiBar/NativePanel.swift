@@ -29,6 +29,15 @@ final class NativePanel: FlippedView {
         if state?.screen == "detail" { action("back") } else { nextResponder?.tryToPerform(#selector(cancelOperation(_:)), with: sender) }
     }
     private func action(_ name: String, _ values: [String: Any] = [:]) { onAction?(name, values) }
+    /// Range segments in display order; Today's short label takes a narrower segment so "Last 24 hours" still fits.
+    private static let periodSegments: [(Period, NSRect)] = {
+        var x: CGFloat = 23
+        return Period.displayOrder.map { p in
+            let width: CGFloat = p == .today ? 56 : 85
+            defer { x += width + 1 }
+            return (p, NSRect(x: x, y: 79, width: width, height: 29))
+        }
+    }()
     private func button(_ title: String, _ rect: NSRect, style: PaintedButton.Style = .plain, action: @escaping () -> Void) -> PaintedButton {
         let b = PaintedButton(title, frame: rect, style: style, action: action); addSubview(b); return b
     }
@@ -62,8 +71,8 @@ final class NativePanel: FlippedView {
             let back = button("‹", NSRect(x: 20, y: 20, width: 29, height: 29), style: .navigation) { [weak self] in self?.action("back") }
             back.setAccessibilityLabel(L("返回网站概览")); back.toolTip = L("返回网站概览")
             _ = button("↗", NSRect(x: 310, y: 20, width: 29, height: 29), style: .navigation) { [weak self] in self?.action("dashboard", ["id": selected.website.id]) }
-            for p in Period.allCases {
-                let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period
+            for (p, rect) in Self.periodSegments {
+                let b = button(p.title, rect, style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period
             }
             let frame = NSRect(x: 0, y: 145, width: bounds.width, height: max(40, bounds.height - 185))
             if reuseDetail, let scroll = detailScroll, let body = scroll.documentView as? DetailBody {
@@ -89,8 +98,8 @@ final class NativePanel: FlippedView {
                 addSubview(spinner); spinner.startAnimation(nil)
             }
             let settings = button(L("连接设置"), NSRect(x: 301, y: 22, width: 30, height: 30), style: .icon) { [weak self] in self?.action("settings") }; settings.toolTip = L("连接与网站设置")
-            for p in Period.allCases {
-                let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
+            for (p, rect) in Self.periodSegments {
+                let b = button(p.title, rect, style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
             }
             let frame = NSRect(x: 0, y: 135, width: bounds.width, height: max(40, bounds.height - 175))
             if reuseOverview, let scroll = overviewScroll, let document = scroll.documentView {
@@ -156,8 +165,8 @@ final class NativePanel: FlippedView {
         }
     }
 }
-private func drawGrowth(_ site: PanelSite, rect: NSRect) {
-    let change = Stats.change(current: site.total, previous: site.previousVisitors)
+private func drawGrowth(_ site: PanelSite, period: Period, rect: NSRect) {
+    let change = Stats.change(current: site.total, previous: site.previousVisitors, period: period)
     // Color from the numbers, not the localized text: green for growth, orange for a decline or a new site.
     var color = Ink.secondary
     if let current = site.total, let previous = site.previousVisitors {
@@ -239,7 +248,7 @@ final class SiteCard: FlippedView {
         let line = NSMutableAttributedString(string: count, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .medium), .foregroundColor: Ink.text])
         line.append(NSAttributedString(string: " " + L("访客"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
         line.draw(at: NSPoint(x: bounds.width - 20 - line.size().width, y: 17))
-        drawGrowth(site, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
+        drawGrowth(site, period: state.period, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
         do {
             if site.points == nil { text(state.loading ? L("正在加载…") : site.error != nil && site.total == nil ? L("该范围暂无已保存数据") : L("趋势暂无数据"), NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
             let formatter = Formats.axis(state.period)
@@ -307,11 +316,11 @@ final class DetailBody: FlippedView {
         let hint = site.live != nil ? L("最近 5 分钟 · 30 秒刷新") : site.cached ? L("离线时不显示实时数据") : site.liveFailed ? L("实时数据获取失败") : L("正在获取…")
         text(hint, NSRect(x: 160, y: 15, width: 180, height: 13), size: 9, color: site.live == nil && !site.cached && site.liveFailed ? .systemOrange : Ink.secondary, alignment: .right)
         fill(NSRect(x: 20, y: 38, width: 320, height: 0.5), Ink.line)
-        drawGrowth(site, rect: NSRect(x: 185, y: 99, width: 155, height: 16))
+        drawGrowth(site, period: state.period, rect: NSRect(x: 185, y: 99, width: 155, height: 16))
         drawStats(site.stats, y: 134)
         fill(NSRect(x: 20, y: 182, width: 320, height: 0.5), Ink.line)
         text(L("会话趋势"), NSRect(x: 20, y: 195, width: 160, height: 17), weight: .semibold)
-        text(state.period == .day ? L("每小时") : L("每天"), NSRect(x: 265, y: 195, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
+        text(state.period.hourly ? L("每小时") : L("每天"), NSRect(x: 265, y: 195, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
         if site.points == nil { text(L("趋势暂无数据"), NSRect(x: 90, y: 248, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
         let formatter = Formats.axis(state.period)
         text(formatter.string(from: state.start), NSRect(x: 20, y: 313, width: 100, height: 14), size: 9, color: Ink.secondary)

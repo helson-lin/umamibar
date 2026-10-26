@@ -339,9 +339,8 @@ final class MainController: NSViewController {
                         case .success(let series):
                             do {
                                 let points = try TimeBuckets.expand(series.sessions, period: requestedPeriod, end: queryEnd, wallClockLabels: true)
-                                let start = requestedPeriod.start(before: queryEnd), previousEnd = start.addingTimeInterval(-0.001)
-                                let previousStart = start.addingTimeInterval(-queryEnd.timeIntervalSince(start))
-                                let previousQuery = [URLQueryItem(name: "startAt", value: String(Int(previousStart.timeIntervalSince1970 * 1000))), URLQueryItem(name: "endAt", value: String(Int(previousEnd.timeIntervalSince1970 * 1000)))]
+                                let start = requestedPeriod.start(before: queryEnd), previousWindow = requestedPeriod.previous(before: queryEnd)
+                                let previousQuery = [URLQueryItem(name: "startAt", value: String(Int(previousWindow.start.timeIntervalSince1970 * 1000))), URLQueryItem(name: "endAt", value: String(Int(previousWindow.end.timeIntervalSince1970 * 1000)))]
                                 let previous = self.api.get(Stats.self, connection: connection, path: path + "/stats", query: previousQuery) { result in
                                     guard self.generation == token else { return }
                                     var previousVisitors: Int?

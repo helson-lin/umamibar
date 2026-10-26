@@ -207,3 +207,7 @@
 "实时数据获取失败，下次刷新将重试" = "Couldn't load live data; retrying on next refresh";
 "所选网站 · 最近 5 分钟内的访客 · 每分钟更新" = "Chosen website · visitors in the last 5 minutes · updates every minute";
 "全部已选网站 · 最近 5 分钟内的访客 · 每分钟更新 · 跨站未去重" = "All selected sites · visitors in the last 5 minutes · updates every minute · not deduplicated";
+"今天" = "Today";
+"— 较昨日同时段" = "— vs. yesterday";
+"新增 · 昨日同时段为 0" = "New · 0 yesterday by now";
+"%@ %.1f%% 较昨日同时段" = "%@ %.1f%% vs. yesterday";

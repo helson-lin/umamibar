@@ -226,7 +226,7 @@ final class SettingsWindowController: NSWindowController {
         y = data.frame.maxY + 8
         y += note(L("离线时查看上次结果。仅存于本机，不包含密钥。"), at: y, in: body) + 12
         if showingSavedData {
-            for period in Period.allCases {
+            for period in Period.displayOrder {
                 let values = stored.filter { $0.period == period.rawValue }
                 guard let latest = values.max(by: { $0.savedAt < $1.savedAt }) else { continue }
                 settingsLabel(L("%@ · %ld 个网站", period.title, values.count), in: body, frame: NSRect(x: 32, y: y, width: 376, height: 18), size: 11)

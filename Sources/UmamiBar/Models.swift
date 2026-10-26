@@ -79,11 +79,13 @@ struct Stats: Codable {
         let seconds = max(0, Int(totalTime / Double(visits - bounces)))
         return seconds < 60 ? L("%ld秒", seconds) : L("%ld分%ld秒", seconds / 60, seconds % 60)
     }
-    static func change(current: Int?, previous: Int?) -> String {
-        guard let current = current, let previous = previous else { return L("— 较上期") }
-        if previous == 0 { return current > 0 ? L("新增 · 上期为 0") : L("— 持平") }
+    static func change(current: Int?, previous: Int?, period: Period? = nil) -> String {
+        let yesterday = period == .today
+        guard let current = current, let previous = previous else { return yesterday ? L("— 较昨日同时段") : L("— 较上期") }
+        if previous == 0 { return current > 0 ? (yesterday ? L("新增 · 昨日同时段为 0") : L("新增 · 上期为 0")) : L("— 持平") }
         let percent = Double(current - previous) / Double(previous) * 100
-        return L("%@ %.1f%% 较上期", percent > 0 ? "↑" : percent < 0 ? "↓" : "—", abs(percent))
+        let arrow = percent > 0 ? "↑" : percent < 0 ? "↓" : "—"
+        return yesterday ? L("%@ %.1f%% 较昨日同时段", arrow, abs(percent)) : L("%@ %.1f%% 较上期", arrow, abs(percent))
     }
 }
 /// Visitors active in the last 5 minutes. Umami versions answer {"visitors": n}, {"x": n} or [{"x": n}].
@@ -154,15 +156,29 @@ enum DetailDimension: String, CaseIterable {
     }
 }
 enum Period: Int, CaseIterable {
-    case day, week, month
-    var title: String { [L("最近 24 小时"), L("最近 7 天"), L("最近一个月")][rawValue] }
-    var unit: String { self == .day ? "hour" : "day" }
+    // Raw values are saved in preferences and snapshots, so new ranges are appended.
+    case day, week, month, today
+    /// Left-to-right order of the range segments.
+    static let displayOrder: [Period] = [.today, .day, .week, .month]
+    var title: String { [L("最近 24 小时"), L("最近 7 天"), L("最近一个月"), L("今天")][rawValue] }
+    var hourly: Bool { self == .day || self == .today }
+    var unit: String { hourly ? "hour" : "day" }
     func start(before end: Date, calendar: Calendar = .current) -> Date {
         switch self {
+        case .today: return calendar.startOfDay(for: end)
         case .day: return end.addingTimeInterval(-86400)
         case .week: return end.addingTimeInterval(-7 * 86400)
         case .month: return calendar.date(byAdding: .month, value: -1, to: end) ?? end
         }
+    }
+    /// The comparison window. Today compares with yesterday up to the same clock time;
+    /// rolling ranges compare with the equally long window right before them.
+    func previous(before end: Date, calendar: Calendar = .current) -> (start: Date, end: Date) {
+        let start = start(before: end, calendar: calendar)
+        if self == .today, let from = calendar.date(byAdding: .day, value: -1, to: start), let to = calendar.date(byAdding: .day, value: -1, to: end) {
+            return (from, to.addingTimeInterval(-0.001))
+        }
+        return (start.addingTimeInterval(-end.timeIntervalSince(start)), start.addingTimeInterval(-0.001))
     }
     func query(end: Date) -> [URLQueryItem] {
         [URLQueryItem(name: "startAt", value: String(Int(start(before: end).timeIntervalSince1970 * 1000))),
