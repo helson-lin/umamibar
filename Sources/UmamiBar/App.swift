@@ -129,6 +129,8 @@ final class MainController: NSViewController {
     private var breakdown = "pages", dimension: DetailDimension = .pages
     private var utmDimension: DetailDimension = .utmSource, locationDimension: DetailDimension = .country
     private var detailLoading = false, detailToken = UUID()
+    /// Whether the breakdown lists every loaded row. Background refreshes keep it; choosing another site, tab, field or range collapses it.
+    private var detailExpanded = false
     private var detailTask: URLSessionDataTask?
     private var observers: [NSObjectProtocol] = []
     /// Live counts are never saved: each expires after the 5-minute window it describes.
@@ -219,22 +221,24 @@ final class MainController: NSViewController {
         case "back": detailTask?.cancel(); detailToken = UUID(); detailID = nil; screen = sites.isEmpty ? "empty" : "overview"; publish(); refreshIfNeeded()
         case "detail":
             guard let id = body["id"] as? String, sites.contains(where: { $0.id == id }) else { return }
-            detailID = id; screen = "detail"; breakdown = "pages"; dimension = .pages; detailRows = nil; publish(); loadBreakdown()
+            detailID = id; screen = "detail"; breakdown = "pages"; dimension = .pages; detailRows = nil; detailExpanded = false; publish(); loadBreakdown()
         case "breakdown":
             guard let value = body["value"] as? String, ["pages", "sources", "utm", "location", "events"].contains(value) else { return }
+            detailExpanded = false
             breakdown = value; dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : value == "events" ? .events : .pages
             loadBreakdown()
         case "dimension":
             guard let raw = body["value"] as? String, let value = DetailDimension(rawValue: raw), value.category == breakdown else { return }
-            dimension = value
+            dimension = value; detailExpanded = false
             if breakdown == "utm" { utmDimension = value }; if breakdown == "location" { locationDimension = value }
             loadBreakdown()
         case "detailRetry": loadBreakdown()
+        case "toggleRows": detailExpanded.toggle(); publish()
         case "refresh": refresh(); refreshLive(maxAge: 0)
         case "period":
             guard let raw = body["value"] as? Int, let value = Period(rawValue: raw), value != period else { return }
             memory[period.rawValue] = records; cancel(); period = value; preferences.defaults.set(raw, forKey: "period")
-            detailRows = nil; errors = [:]; lastAttempt = nil; paused = false; restore(); publish(); refresh()
+            detailRows = nil; detailExpanded = false; errors = [:]; lastAttempt = nil; paused = false; restore(); publish(); refresh()
         case "dashboard":
             if let id = body["id"] as? String, let site = sites.first(where: { $0.id == id }), let url = connection?.dashboard(site) { NSWorkspace.shared.open(url) }
         case "quit": NSApp.terminate(nil)
@@ -296,7 +300,7 @@ final class MainController: NSViewController {
         let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: displayedEnd), end: displayedEnd, updated: updated, sites: sites.map { site in
             let value = records[site.id]
             return PanelSite(website: site, total: value?.stats.visitors, points: value?.points, error: errors[site.id], stats: value?.stats, previousVisitors: value?.previousVisitors, color: colors[site.id] ?? 0, pinned: layout.pinned.contains(site.id), rangeStart: value?.start, rangeEnd: value?.end, savedAt: value?.savedAt, cached: stale.contains(site.id) && value != nil, live: liveNow[site.id], liveFailed: liveFailures.contains(site.id))
-        }, detailID: detailID, breakdown: breakdown, dimension: dimension, rows: detailRows, detailLoading: detailLoading, detailError: detailError, hasConnection: connection != nil, hasCachedData: hasStale)
+        }, detailID: detailID, breakdown: breakdown, dimension: dimension, rows: detailRows, detailExpanded: detailExpanded, detailLoading: detailLoading, detailError: detailError, hasConnection: connection != nil, hasCachedData: hasStale)
         preferredContentSize = NSSize(width: 360, height: min(screen == "empty" ? 206 : 640, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
         panel.render(state)
     }
@@ -369,8 +373,7 @@ final class MainController: NSViewController {
         let restored = preferences.retainData ? snapshots.detail(base: connection.base, websiteID: id, period: period, dimension: dimension, end: detailEnd) : nil
         detailRows = restored; detailError = nil; detailLoading = restored == nil; publish()
         let requestedPeriod = period, requestedDimension = dimension
-        // Events keep every row so shares are of all events; other breakdowns only need the top 5.
-        let limit = dimension == .events ? 500 : 5
+        let limit = dimension.fetchLimit
         let query = period.query(end: detailEnd) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: String(limit))]
         detailTask = api.get([MetricRow].self, connection: connection, path: "websites/\(id)/metrics", query: query) { [weak self] result in
             guard let self = self, self.detailToken == token, self.detailID == id, self.screen == "detail" else { return }
@@ -378,7 +381,7 @@ final class MainController: NSViewController {
             switch result {
             case .success(let rows):
                 self.detailRows = Array(rows.sorted { $0.y > $1.y }.prefix(limit))
-                if self.preferences.retainData { try? self.snapshots.saveDetail(DetailSnapshot(websiteID: id, period: requestedPeriod.rawValue, dimension: requestedDimension.rawValue, end: detailEnd, rows: self.detailRows!), base: connection.base) }
+                if self.preferences.retainData { try? self.snapshots.saveDetail(DetailSnapshot(websiteID: id, period: requestedPeriod.rawValue, dimension: requestedDimension.rawValue, end: detailEnd, rows: self.detailRows!, limit: limit), base: connection.base) }
             case .failure(let error):
                 self.detailError = error.localizedDescription
                 // Keep a matching successful breakdown visible on offline refreshes.

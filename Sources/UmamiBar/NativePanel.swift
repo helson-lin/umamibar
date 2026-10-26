@@ -5,7 +5,7 @@ struct PanelState {
     var screen: String; var loading: Bool
     var period: Period; var start: Date; var end: Date; var updated: String
     var sites: [PanelSite]
-    var detailID: String? = nil; var breakdown = "pages"; var dimension: DetailDimension = .pages; var rows: [MetricRow]? = nil
+    var detailID: String? = nil; var breakdown = "pages"; var dimension: DetailDimension = .pages; var rows: [MetricRow]? = nil; var detailExpanded = false
     var detailLoading = false; var detailError: String? = nil
     var hasConnection = false; var hasCachedData = false
 }
@@ -80,10 +80,11 @@ final class NativePanel: FlippedView {
             } else {
                 let scroll = NSScrollView(frame: frame)
                 scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
-                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 644), site: selected, state: next)
+                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: DetailBody.rowsLayout(next).height), site: selected, state: next)
                 body.onBreakdown = { [weak self] value in self?.action("breakdown", ["value": value]) }
                 body.onDimension = { [weak self] value in self?.action("dimension", ["value": value.rawValue]) }
                 body.onRetry = { [weak self] in self?.action("detailRetry") }
+                body.onToggleRows = { [weak self] in self?.action("toggleRows") }
                 scroll.documentView = body; addSubview(scroll); detailScroll = scroll
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: min(detailOffset.y, max(0, body.bounds.height-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
             }
@@ -270,6 +271,20 @@ final class DetailBody: FlippedView {
     var onBreakdown: ((String) -> Void)?
     var onDimension: ((DetailDimension) -> Void)?
     var onRetry: (() -> Void)?
+    var onToggleRows: (() -> Void)?
+    /// Breakdown rows start at `top`; the toggle sits under the visible rows and the footnote under that.
+    /// The footnote keeps its old place when there is nothing to expand.
+    static func rowsLayout(_ state: PanelState) -> (top: CGFloat, visible: Int, toggle: NSRect?, footnote: CGFloat, height: CGFloat) {
+        let top: CGFloat = 405 + (state.breakdown == "utm" || state.breakdown == "location" ? 44 : 0)
+        let rows = state.detailLoading || state.detailError != nil ? [] : state.rows ?? []
+        let visible = state.detailExpanded ? rows.count : min(5, rows.count)
+        var toggle: NSRect?, footnote = top + 5 * 32 + 4
+        if rows.count > 5 {
+            let rect = NSRect(x: 20, y: top + CGFloat(visible) * 32 + 2, width: 320, height: 28)
+            toggle = rect; footnote = rect.maxY + 10
+        }
+        return (top, visible, toggle, footnote, max(644, footnote + 31))
+    }
     init(frame: NSRect, site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; super.init(frame: frame)
         chart.colorIndex = site.color; chart.points = site.points ?? []; addSubview(chart); addSubview(liveDot); placeLiveDot(); addControls()
@@ -277,7 +292,8 @@ final class DetailBody: FlippedView {
     private func placeLiveDot() { liveDot.count = site.live }
     func update(site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; placeLiveDot()
-        subviews.filter { $0 !== chart && $0 !== liveDot }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
+        subviews.filter { $0 !== chart && $0 !== liveDot }.forEach { $0.removeFromSuperview() }; addControls()
+        frame.size.height = Self.rowsLayout(state).height; needsDisplay = true
     }
     private func addControls() {
         for (i, value) in ["pages", "sources", "utm", "location", "events"].enumerated() {
@@ -294,6 +310,10 @@ final class DetailBody: FlippedView {
             popup.target = self; popup.action = #selector(dimensionChanged(_:))
             popup.setAccessibilityLabel(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"))
             addSubview(popup)
+        }
+        if let rect = Self.rowsLayout(state).toggle, let count = state.rows?.count {
+            let toggle = PaintedButton(state.detailExpanded ? L("收起") : L("显示全部 %ld 项", count), frame: rect) { [weak self] in self?.onToggleRows?() }
+            toggle.setAccessibilityValue(state.detailExpanded ? L("已展开") : L("已收起")); addSubview(toggle)
         }
         if state.detailError != nil {
             let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 479, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
@@ -329,19 +349,23 @@ final class DetailBody: FlippedView {
         let offset: CGFloat = state.breakdown == "utm" || state.breakdown == "location" ? 44 : 0
         if offset > 0 { text(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"), NSRect(x: 20, y: 385, width: 88, height: 16), size: 10, color: Ink.secondary) }
         text(state.dimension.title, NSRect(x: 20, y: 382+offset, width: 160, height: 15), size: 9, color: Ink.secondary)
-        text(state.breakdown == "events" ? L("次数 / 占全部事件") : L("次数 / 前5项占比"), NSRect(x: 210, y: 382+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
+        text(L("次数 / 占比"), NSRect(x: 210, y: 382+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
         if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 417+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
         else if let error = state.detailError { text(error, NSRect(x: 20, y: 411+offset, width: 320, height: 24), size: 10, color: .systemOrange) }
         else if let rows = state.rows, !rows.isEmpty {
-            // Events rows cover every event, so their shares are of the total; other breakdowns hold only the top 5.
-            let sum = rows.reduce(0) { $0 + $1.y }
-            for (i,row) in rows.prefix(5).enumerated() {
-                let y = CGFloat(405+i*32)+offset; let ratio = sum > 0 ? row.y/sum : 0
+            // Shares are of every loaded row, not only the visible ones.
+            let sum = rows.reduce(0) { $0 + $1.y }, layout = Self.rowsLayout(state)
+            for (i,row) in rows.prefix(layout.visible).enumerated() {
+                let y = layout.top + CGFloat(i*32); let ratio = sum > 0 ? row.y/sum : 0
                 fill(NSRect(x: 20, y: y, width: 320*ratio, height: 29), Palette.swatch(site.color).base.withAlphaComponent(0.09), radius: 4)
                 text(state.dimension.label(for: row.x), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
                 text("\(Int(row.y))   \(Int((ratio*100).rounded()))%", NSRect(x: 235, y: y+8, width: 97, height: 15), size: 10, alignment: .right)
             }
         } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 417+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        text(state.breakdown == "utm" ? L("未携带字段显示「未设置」· 占比按前 5 项计算") : state.breakdown == "location" ? L("缺失位置显示「未知位置」· 占比按前 5 项计算") : state.breakdown == "events" ? L("仅展示前 5 项 · 占比按该时段全部事件计算") : L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 569+offset, width: 320, height: 17), size: 9, color: Ink.secondary)
+        // Fewer rows than requested means the list is complete; otherwise shares cover only the loaded rows.
+        let loaded = state.rows?.count ?? 0
+        let scope = loaded < state.dimension.fetchLimit ? L("占比按全部 %ld 项计算", loaded) : L("占比按前 %ld 项计算", loaded)
+        let missing = state.breakdown == "utm" ? L("未携带字段显示「未设置」") : state.breakdown == "location" ? L("缺失位置显示「未知位置」") : nil
+        text(missing.map { $0 + " · " + scope } ?? scope, NSRect(x: 20, y: Self.rowsLayout(state).footnote, width: 320, height: 17), size: 9, color: Ink.secondary)
     }
 }

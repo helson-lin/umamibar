@@ -17,7 +17,6 @@
 "— 持平" = "— Unchanged";
 "— 较上期" = "— vs. previous";
 "仅图标" = "Icon Only";
-"仅展示前 5 项 · 占比按当前返回的前 5 项计算" = "Top 5 only · shares are of the five shown";
 "会话趋势" = "Sessions";
 "位置" = "Location";
 "位置维度" = "Location dimension";
@@ -95,7 +94,6 @@
 "服务未返回有效响应。" = "The server returned an invalid response.";
 "服务请求失败（HTTP %ld）。" = "Request failed (HTTP %ld).";
 "未关注" = "Not Followed";
-"未携带字段显示「未设置」· 占比按前 5 项计算" = "Missing fields: Not set · Share of top 5";
 "未知位置" = "Unknown location";
 "未能保存本地数据，请检查磁盘空间与权限。" = "Could not save data. Check disk space and permissions.";
 "未设置" = "Not set";
@@ -110,7 +108,6 @@
 "查看与管理已保存数据" = "View and Manage Saved Data";
 "检查更新…" = "Check for Updates…";
 "橙" = "Orange";
-"次数 / 前5项占比" = "Count / share of top 5";
 "正在刷新 %ld 个网站…" = "Refreshing %ld websites…";
 "正在刷新…" = "Refreshing…";
 "正在刷新网站数据" = "Refreshing website data";
@@ -145,7 +142,6 @@
 "统计响应缺少访客数。" = "The stats response has no visitor count.";
 "绿" = "Green";
 "编辑" = "Edit";
-"缺失位置显示「未知位置」· 占比按前 5 项计算" = "Missing locations: Unknown · Share of top 5";
 "网站" = "Websites";
 "网站概览" = "Overview";
 "置顶" = "Pinned";
@@ -191,8 +187,6 @@
 "事件" = "Events";
 "事件名称" = "Event name";
 "未命名事件" = "Unnamed event";
-"次数 / 占全部事件" = "Count / share of all";
-"仅展示前 5 项 · 占比按该时段全部事件计算" = "Top 5 only · shares are of all events in range";
 "当前在线" = "Online now";
 "人" = "";
 "最近 5 分钟 · 30 秒刷新" = "Last 5 min · updates every 30s";
@@ -211,3 +205,12 @@
 "— 较昨日同时段" = "— vs. yesterday";
 "新增 · 昨日同时段为 0" = "New · 0 yesterday by now";
 "%@ %.1f%% 较昨日同时段" = "%@ %.1f%% vs. yesterday";
+"次数 / 占比" = "Count / share";
+"未携带字段显示「未设置」" = "Missing fields show as “Not set”";
+"缺失位置显示「未知位置」" = "Missing locations show as “Unknown”";
+"占比按全部 %ld 项计算" = "Shares are of all %ld items";
+"占比按前 %ld 项计算" = "Shares are of the top %ld items";
+"显示全部 %ld 项" = "Show all %ld";
+"收起" = "Show less";
+"已展开" = "Expanded";
+"已收起" = "Collapsed";

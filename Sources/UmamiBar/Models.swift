@@ -123,6 +123,9 @@ enum DetailDimension: String, CaseIterable {
         case .events: return "events"
         }
     }
+    /// Rows requested per breakdown. The detail shows the top 5 and can expand to all of them;
+    /// shares are of every loaded row. Events ask for more so their shares cover nearly every event.
+    var fetchLimit: Int { self == .events ? 500 : 100 }
     static func options(for category: String) -> [DetailDimension] {
         allCases.filter { $0.category == category }
     }

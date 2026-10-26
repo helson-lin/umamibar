@@ -2,6 +2,26 @@ import XCTest
 @testable import UmamiBar
 
 final class CoreTests: XCTestCase {
+    func testBreakdownRowsExpandPastTopFive() {
+        var state = PanelState(screen: "detail", loading: false, period: .day, start: Date(), end: Date(), updated: "", sites: [])
+        state.rows = (0..<12).map { MetricRow(x: "/\($0)", y: Double(20 - $0)) }
+        let collapsed = DetailBody.rowsLayout(state)
+        XCTAssertEqual(collapsed.visible, 5)
+        XCTAssertNotNil(collapsed.toggle)
+        state.detailExpanded = true
+        let expanded = DetailBody.rowsLayout(state)
+        XCTAssertEqual(expanded.visible, 12)
+        XCTAssertEqual(expanded.toggle!.minY - collapsed.toggle!.minY, 7 * 32)
+        XCTAssertGreaterThan(expanded.height, collapsed.height)
+        // Five rows or fewer: no toggle, and the footnote stays where it always was.
+        state.rows = Array(state.rows!.prefix(5))
+        XCTAssertNil(DetailBody.rowsLayout(state).toggle)
+        XCTAssertEqual(DetailBody.rowsLayout(state).footnote, 569)
+        state.detailLoading = true; state.rows = (0..<12).map { MetricRow(x: "/\($0)", y: 1) }
+        XCTAssertNil(DetailBody.rowsLayout(state).toggle)
+        XCTAssertEqual(DetailDimension.pages.fetchLimit, 100)
+        XCTAssertEqual(DetailDimension.events.fetchLimit, 500)
+    }
     func testDetailDimensionsAndMissingLabels() throws {
         XCTAssertEqual(DetailDimension.options(for: "utm").map(\.rawValue), ["utmSource", "utmMedium", "utmCampaign", "utmTerm", "utmContent"])
         XCTAssertEqual(DetailDimension.options(for: "location").map(\.rawValue), ["country", "region", "city"])

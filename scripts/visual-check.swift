@@ -30,9 +30,16 @@ import AppKit
    state.dimension = dimension; state.breakdown = dimension.category
    state.rows = [MetricRow(x: dimension == .country ? "CN" : "google", y: 27), MetricRow(x: "newsletter", y: 16), MetricRow(x: "very_long_campaign_name_for_autumn_product_launch", y: 10), MetricRow(x: nil, y: 7), MetricRow(x: "", y: 4)]
   }
+  // Twelve rows so "Show all" appears; --expanded lists them all.
+  if CommandLine.arguments.contains("--many-rows") { state.rows = (0..<12).map { MetricRow(x: "/docs/page-\($0 + 1)", y: Double(40 - $0 * 3)) } }
+  if CommandLine.arguments.contains("--expanded") { state.detailExpanded = true }
   var actions: [String] = []
   panel.onAction = { name, _ in actions.append(name) }
   panel.render(state);panel.layoutSubtreeIfNeeded()
+  // Scroll the detail body to its end so the breakdown rows are in the screenshot.
+  if CommandLine.arguments.contains("--scroll-bottom"), let scroll = panel.subviews.compactMap({ $0 as? NSScrollView }).first, let body = scroll.documentView {
+   scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, body.frame.height - scroll.contentView.bounds.height))); scroll.reflectScrolledClipView(scroll.contentView)
+  }
   if CommandLine.arguments.contains("--click-tests") {
    let expected = screen == "empty" ? L("退出 UmamiBar") : L("刷新数据")
    guard let button = panel.subviews.compactMap({ $0 as? PaintedButton }).first(where: { $0.title == expected }) else { fatalError("Missing button") }

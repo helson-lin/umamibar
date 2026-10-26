@@ -119,7 +119,10 @@ final class PreferencesTests: XCTestCase {
         let store = SnapshotStore(directory: try directory()), base = URL(string: "https://one.test/api")!
         let value = try snapshot("a")
         try store.save(value, base: base)
-        try store.saveDetail(DetailSnapshot(websiteID: "a", period: 0, dimension: "path", end: value.end, rows: [MetricRow(x: "/", y: 2)]), base: base)
+        // Rows saved before "Show more" (no limit) are top-5 only and must not be restored as complete lists.
+        try store.saveDetail(DetailSnapshot(websiteID: "a", period: 0, dimension: "path", end: value.end, rows: [MetricRow(x: "/", y: 1)]), base: base)
+        XCTAssertNil(store.detail(base: base, websiteID: "a", period: .day, dimension: .pages, end: value.end))
+        try store.saveDetail(DetailSnapshot(websiteID: "a", period: 0, dimension: "path", end: value.end, rows: [MetricRow(x: "/", y: 2)], limit: DetailDimension.pages.fetchLimit), base: base)
         XCTAssertEqual(store.detail(base: base, websiteID: "a", period: .day, dimension: .pages, end: value.end)?.first?.y, 2)
         XCTAssertNil(store.detail(base: base, websiteID: "a", period: .day, dimension: .sources, end: value.end))
         let next = try snapshot("a", end: value.end.addingTimeInterval(60))
