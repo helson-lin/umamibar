@@ -67,6 +67,27 @@ final class PreferencesTests: XCTestCase {
         XCTAssertTrue(single.tooltip.contains("Alpha"))
         XCTAssertTrue(single.tooltip.contains("本地数据"))
     }
+    func testLiveMenuSumsOnlyCompleteCounts() throws {
+        let pair = Array(sites.prefix(2))
+        let total = MenuSummary.make(mode: .live, websiteID: nil, sites: pair, records: [:], period: .day, stale: [], live: ["a": 3, "b": 4])
+        XCTAssertEqual(total.count, 7); XCTAssertEqual(total.title, " 7"); XCTAssertTrue(total.live); XCTAssertFalse(total.cached)
+        XCTAssertTrue(total.tooltip.contains(L("最近 5 分钟内的访客")))
+        let partial = MenuSummary.make(mode: .live, websiteID: nil, sites: pair, records: [:], period: .day, stale: [], live: ["a": 3], liveFailed: true)
+        XCTAssertNil(partial.count); XCTAssertEqual(partial.title, " —"); XCTAssertFalse(partial.live)
+        XCTAssertTrue(partial.tooltip.contains(L("实时数据获取失败，下次刷新将重试")))
+        let zero = MenuSummary.make(mode: .websiteLive, websiteID: "b", sites: sites, records: [:], period: .day, stale: [], live: ["a": 3, "b": 0])
+        XCTAssertEqual(zero.title, " 0"); XCTAssertTrue(zero.live); XCTAssertTrue(zero.tooltip.contains(sites[1].name))
+        // Saved visitor snapshots never stand in for a live count.
+        let a = try snapshot("a")
+        XCTAssertNil(MenuSummary.make(mode: .websiteLive, websiteID: "a", sites: sites, records: ["a": a], period: .day, stale: ["a"]).count)
+    }
+    func testLiveWebsiteSourceFallsBackLikeVisitorSource() {
+        let prefs = preferences()
+        prefs.menuWebsiteID = "b"; prefs.menuDisplay = .websiteLive
+        XCTAssertFalse(prefs.reconcileMenuSource(selected: ["a", "b"]))
+        XCTAssertTrue(prefs.reconcileMenuSource(selected: ["a"]))
+        XCTAssertEqual(prefs.menuDisplay, .total)
+    }
     func testZeroMissingAndIconRemainDistinct() throws {
         let zero = try snapshot("a", count: 0)
         let values = ["a": zero]

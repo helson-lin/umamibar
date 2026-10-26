@@ -188,20 +188,27 @@ final class SettingsWindowController: NSWindowController {
             _ = button(L("登录启动已被系统停用 · 前往系统设置开启 ↗"), NSRect(x: 24, y: y-16, width: 392, height: 28), in: body) { [weak self] in self?.login.openSystemSettings() }; y += 20
         }
         let mode = preferences.menuDisplay
-        let menu = group(L("菜单栏"), rows: mode == .website ? 2 : 1, at: y, in: body)
+        let menu = group(L("菜单栏"), rows: mode.single ? 2 : 1, at: y, in: body)
         rowLabel(L("显示内容"), row: 0, in: menu)
         let popup = ActionPopup(frame: NSRect(x: 210, y: 8, width: 178, height: 28), label: L("显示内容"), choices: MenuDisplay.allCases.map { ($0.rawValue, $0.title) }, selected: mode.rawValue) { [weak self] raw in
             guard let self = self, let mode = MenuDisplay(rawValue: raw) else { return }
-            if mode == .website, !self.chosen.contains(self.preferences.menuWebsiteID ?? "") { self.preferences.menuWebsiteID = self.layout.sorted(self.available.filter { self.chosen.contains($0.id) }).first?.id }
+            if mode.single, !self.chosen.contains(self.preferences.menuWebsiteID ?? "") { self.preferences.menuWebsiteID = self.layout.sorted(self.available.filter { self.chosen.contains($0.id) }).first?.id }
             self.preferences.menuDisplay = mode; self.render()
         }
-        popup.itemArray.first { $0.representedObject as? String == MenuDisplay.website.rawValue }?.isEnabled = !chosen.isEmpty
+        popup.itemArray.filter { MenuDisplay(rawValue: $0.representedObject as? String ?? "")?.single == true }.forEach { $0.isEnabled = !chosen.isEmpty }
         menu.addSubview(popup)
-        if mode == .website {
+        if mode.single {
             rowLabel(L("指定网站"), row: 1, in: menu)
             menu.addSubview(ActionPopup(frame: NSRect(x: 210, y: 52, width: 178, height: 28), label: L("指定网站"), choices: layout.sorted(available.filter { chosen.contains($0.id) }).map { ($0.id, $0.name) }, selected: preferences.menuWebsiteID ?? "") { [weak self] id in self?.preferences.menuWebsiteID = id })
         }
-        let menuNote = mode == .icon ? L("隐藏数字，保留菜单栏入口。") : mode == .website ? L("所选网站 · 跟随概览的时间范围") : L("全部已选网站 · 当前时间范围 · 跨站未去重")
+        let menuNote: String
+        switch mode {
+        case .icon: menuNote = L("隐藏数字，保留菜单栏入口。")
+        case .website: menuNote = L("所选网站 · 跟随概览的时间范围")
+        case .websiteLive: menuNote = L("所选网站 · 最近 5 分钟内的访客 · 每分钟更新")
+        case .live: menuNote = L("全部已选网站 · 最近 5 分钟内的访客 · 每分钟更新 · 跨站未去重")
+        case .total: menuNote = L("全部已选网站 · 当前时间范围 · 跨站未去重")
+        }
         y = menu.frame.maxY + 8; y += note(menuNote, at: y, in: body) + 20
         let data = group(L("本地数据"), rows: 2, at: y, in: body)
         rowLabel(L("保留最近成功数据"), row: 0, in: data)
@@ -368,7 +375,7 @@ final class SettingsWindowController: NSWindowController {
             preferences.setLayout(layout, for: candidate.base)
             _ = preferences.reconcileMenuSource(selected: selected.map(\.id))
             saved = candidate; key.stringValue = ""; needsConnectionCommit = false; listError = nil
-            footerStatus = oldMode == .website && preferences.menuDisplay == .total ? L("数字来源已取消关注，已改为合计访客。") : L("已保存")
+            footerStatus = oldMode.single && preferences.menuDisplay == .total ? L("数字来源已取消关注，已改为合计访客。") : L("已保存")
             if close { window?.close() } else { reloadList() }
         } catch { listError = error.localizedDescription; footerStatus = L("保存失败，请重试。"); render() }
     }

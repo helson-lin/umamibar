@@ -22,6 +22,13 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(DetailDimension.city.label(for: "San Francisco"), "San Francisco")
     }
 
+    func testActiveVisitorsAcrossUmamiVersions() throws {
+        for json in [#"{"visitors":7}"#, #"{"x":7}"#, #"[{"x":7}]"#] {
+            XCTAssertEqual(try JSONDecoder().decode(Active.self, from: Data(json.utf8)).visitors, 7, json)
+        }
+        XCTAssertEqual(try JSONDecoder().decode(Active.self, from: Data("[]".utf8)).visitors, 0)
+        XCTAssertThrowsError(try JSONDecoder().decode(Active.self, from: Data(#"{"pageviews":3}"#.utf8)))
+    }
     func testConnectionNormalization() throws {
         XCTAssertEqual(try Connection.baseURL("https://api.umami.is").absoluteString, "https://api.umami.is/v1")
         XCTAssertEqual(try Connection.baseURL("https://stats.example.com").path, "/api")

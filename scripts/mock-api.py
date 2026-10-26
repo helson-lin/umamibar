@@ -19,6 +19,8 @@ class Handler(BaseHTTPRequestHandler):
             value = {"data": SITES, "count": len(SITES)}
         elif self.path.split("?")[0].endswith("/pageviews"):
             value = {"sessions": []}
+        elif self.path.split("?")[0].endswith("/active"):
+            value = {"visitors": 2}
         elif self.path.split("?")[0].endswith("/stats"):
             value = {"visitors": 3, "pageviews": 5, "visits": 4, "bounces": 1, "totaltime": 60}
         else:

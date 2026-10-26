@@ -16,6 +16,8 @@ import AppKit
    PanelSite(website: site.website, total: site.total, points: site.points, error: nil, stats: fixture, previousVisitors: [0,30,16][index], color: [0,2,4][index])
   }
   if CommandLine.arguments.contains("--pinned") { state.sites[0].pinned = true }
+  // Live counts: zero, someone online, and a failed request (shown as a dash, never as zero).
+  if CommandLine.arguments.contains("--live") { for (i, value) in [0, 7, nil].enumerated() { state.sites[i].live = value; state.sites[i].liveFailed = value == nil } }
   if CommandLine.arguments.contains("--cached") {
    state.hasCachedData = true; state.start = state.start.addingTimeInterval(-3600); state.end = state.end.addingTimeInterval(-3600)
    state.updated = L("本地数据 · %@", Formats.time.string(from: state.end))

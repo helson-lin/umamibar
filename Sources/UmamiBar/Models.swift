@@ -86,6 +86,22 @@ struct Stats: Codable {
         return L("%@ %.1f%% 较上期", percent > 0 ? "↑" : percent < 0 ? "↓" : "—", abs(percent))
     }
 }
+/// Visitors active in the last 5 minutes. Umami versions answer {"visitors": n}, {"x": n} or [{"x": n}].
+struct Active: Decodable {
+    let visitors: Int
+    private enum CodingKeys: String, CodingKey { case visitors, x }
+    init(from decoder: Decoder) throws {
+        if var list = try? decoder.unkeyedContainer() {
+            visitors = list.isAtEnd ? 0 : try list.decode(Active.self).visitors
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard let value = try c.decodeIfPresent(Double.self, forKey: .visitors) ?? c.decodeIfPresent(Double.self, forKey: .x) else {
+            throw DecodingError.dataCorruptedError(forKey: .visitors, in: c, debugDescription: "Missing active visitor count")
+        }
+        visitors = max(0, Int(value))
+    }
+}
 struct MetricRow: Codable {
     let x: String?
     let y: Double

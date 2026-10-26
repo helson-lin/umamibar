@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UmamiBar · 实时在线设计</title>
+<style>
+/* Tokens shared with preferences.html; the app keeps macOS system typography. */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", sans-serif;
+  font-synthesis: none; color-scheme: light;
+  --page: #f1f2ef; --ink: #282c29; --muted: #6a726b; --surface: #fcfcfa; --bottom: #f4f5f1; --well: #e9ece6;
+  --line: #26362614; --green: #07845c; --green-wash: #07845c14; --orange: #bb681d; --control: #ffffff; --rim: #ffffffd9;
+  --shadow: 0 22px 42px #26362b16, 0 3px 9px #26362b0a; --focus: #337fd4; --notice-ink: #815117;
+  --text-caption: .6875rem; --text-secondary: .75rem; --text-body: .8125rem;
+}
+html[data-theme=dark] { color-scheme: dark; --page: #1b1e1a; --ink: #eff1eb; --muted: #a6afa3; --surface: #2b3029; --bottom: #252a24; --well: #1d221c; --line: #ffffff14; --green: #42c796; --green-wash: #42c79618; --orange: #edac73; --control: #3a4136; --rim: #ffffff20; --shadow: 0 22px 42px #00000030, 0 3px 9px #0000001a; --notice-ink: #e7c694; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); }
+button, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+h1, h2, p { margin: 0; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Review canvas */
+.page { max-width: 1200px; margin: 0 auto; padding: 32px 36px 40px; }
+.intro h1 { font-size: 1.5rem; letter-spacing: -.03em; font-weight: 600; }
+.intro p { font-size: var(--text-secondary); color: var(--muted); margin-top: 8px; line-height: 1.7; max-width: 720px; }
+.controls { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin: 20px 0; font-size: var(--text-caption); color: var(--muted); }
+.controls label { display: flex; gap: 8px; align-items: center; }
+.controls select { border: 1px solid var(--line); border-radius: 6px; background: var(--control); padding: 4px 8px; font-size: var(--text-secondary); }
+.desk { border-radius: 14px; background: linear-gradient(145deg, #e2e7df, #d8e1d8); padding: 0 28px 28px; box-shadow: inset 0 1px 0 #ffffff80; }
+html[data-theme=dark] .desk { background: linear-gradient(145deg,#303b30,#26362b); }
+.menu { height: 34px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; border-bottom: 1px solid #334d3920; font-size: var(--text-caption); margin: 0 -12px; padding: 0 12px; }
+.status-item { height: 24px; padding: 0 7px; display: flex; align-items: center; gap: 6px; border-radius: 5px; background: #ffffff65; font-size: var(--text-secondary); font-weight: 500; position: relative; }
+html[data-theme=dark] .status-item { background: #ffffff12; }
+.status-item.icon-only { width: 27px; justify-content: center; padding: 0; }
+.mark { display: inline-flex; gap: 2px; align-items: flex-end; height: 13px; }
+.mark i { display: block; width: 3px; border-radius: 2px; background: currentColor; }
+.mark i:nth-child(1) { height: 7px; } .mark i:nth-child(2) { height: 13px; } .mark i:nth-child(3) { height: 10px; }
+/* Live marker in the menu bar: a 4pt dot at the top-right of the icon, like the cache dot but green. */
+.status-item.live .mark { position: relative; }
+.status-item.live .mark::after { content: ""; position: absolute; right: -3px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: var(--green); }
+.status-item.cached .mark::after { background: #a86a28; }
+.tooltip { position: absolute; top: 30px; right: 0; width: 260px; padding: 7px 9px; border-radius: 6px; background: var(--surface); box-shadow: var(--shadow); color: var(--ink); font-size: var(--text-caption); line-height: 1.6; font-weight: 400; white-space: pre-line; z-index: 2; }
+.workspaces { display: grid; grid-template-columns: repeat(auto-fit, 360px); justify-content: center; gap: 48px; padding-top: 52px; }
+.frame-label { font-size: var(--text-caption); color: #536657; margin: 0 1px 10px; display: flex; justify-content: space-between; }
+html[data-theme=dark] .frame-label { color: #a6b6a3; }
+
+/* 360pt popover */
+.popover { width: 360px; border: 1px solid var(--rim); border-radius: 12px; background: linear-gradient(145deg, var(--surface), var(--bottom)); box-shadow: var(--shadow); overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; padding: 20px 20px 0; height: 56px; }
+.head .title { font-size: 13px; font-weight: 600; }
+.head .sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.nav { width: 29px; height: 29px; border-radius: 8px; background: var(--well); display: grid; place-items: center; font-size: 15px; }
+.seg { margin: 20px 20px 0; display: flex; background: var(--well); padding: 3px; border-radius: 9px; gap: 2px; }
+.seg span { flex: 1; text-align: center; font-size: 11px; padding: 6px 0; border-radius: 6px; color: var(--muted); }
+.seg span.on { background: var(--control); color: var(--ink); font-weight: 500; box-shadow: 0 1px 3px #00000010; }
+.range { font-size: 10px; color: var(--muted); padding: 12px 21px 10px; }
+.card { padding: 17px 20px 16px; border-top: .5px solid var(--line); }
+.row { display: flex; justify-content: space-between; align-items: flex-start; }
+.name { font-size: 12px; font-weight: 500; } .domain { font-size: 10px; color: var(--muted); margin-top: 4px; }
+.count { font-size: 24px; font-weight: 500; text-align: right; } .count small { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+/* Live chip shares the growth line: chip left under the domain, growth right. */
+.meta { display: flex; justify-content: space-between; align-items: center; margin-top: 3px; height: 16px; font-size: 9px; }
+.growth { color: var(--green); }
+.live { display: inline-flex; align-items: center; gap: 5px; height: 16px; padding: 0 6px 0 5px; border-radius: 8px; background: var(--green-wash); color: var(--green); font-size: 9px; font-weight: 500; }
+.live i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.live.zero { background: var(--well); color: var(--muted); }
+.live.zero i { background: none; box-shadow: inset 0 0 0 1px currentColor; }
+.live.unknown { background: none; color: var(--muted); padding-left: 0; }
+.live.unknown i { display: none; }
+.bars { height: 65px; display: flex; align-items: flex-end; gap: 2px; margin-top: 8px; }
+.bars b { flex: 1; border-radius: 2px 2px 0 0; background: linear-gradient(#ffad78, #e67b32); }
+.bars.green b { background: linear-gradient(#7ed9a8, #1e9e68); }
+.axis { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin-top: 6px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 12px; }
+.stats div { padding-left: 10px; border-left: .5px solid var(--line); } .stats div:first-child { padding-left: 0; border: 0; }
+.stats span { display: block; font-size: 9px; color: var(--muted); } .stats strong { display: block; font-size: 12px; font-weight: 500; margin-top: 4px; }
+.note { font-size: 9px; color: var(--orange); margin-top: 8px; }
+.footer { border-top: .5px solid var(--line); height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 20px; font-size: 10px; color: var(--muted); }
+
+/* Detail */
+.detail-body { padding: 4px 20px 16px; }
+.hero { display: flex; justify-content: space-between; align-items: flex-start; }
+.hero .label { font-size: 10px; color: var(--muted); }
+.hero .big { font-size: 34px; font-weight: 500; margin-top: 4px; }
+/* Live block: right of the visitor count, above the growth line. */
+.live-block { text-align: right; padding-top: 1px; }
+.live-block .label { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.live-block .label i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.live-block.zero .label i { background: none; box-shadow: inset 0 0 0 1px var(--muted); }
+.live-block.unknown .label i { display: none; }
+.live-block .value { font-size: 20px; font-weight: 500; margin-top: 4px; }
+.live-block .value small { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 3px; }
+.live-block .hint { font-size: 9px; color: var(--muted); margin-top: 3px; }
+.live-block.failed .hint { color: var(--orange); }
+.growth-line { text-align: right; font-size: 9px; color: var(--green); margin-top: 4px; }
+.section { border-top: .5px solid var(--line); margin-top: 14px; padding-top: 12px; display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; }
+.section span { font-size: 9px; color: var(--muted); font-weight: 400; }
+.tabs { display: flex; gap: 2px; margin-top: 16px; }
+.tabs span { flex: 1; text-align: center; font-size: 10px; padding: 7px 0; border-radius: 6px; color: var(--muted); background: var(--well); }
+.tabs span.on { background: var(--control); color: var(--ink); font-weight: 500; box-shadow: 0 1px 3px #00000010; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .live:not(.zero):not(.unknown) i, .live-block:not(.zero):not(.unknown):not(.failed) .label i { animation: breathe 2.4s ease-in-out infinite; }
+}
+/* One soft pulse that signals "live" without drawing the eye across the whole overview. */
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+details { margin-top: 28px; font-size: var(--text-secondary); line-height: 1.8; color: var(--muted); }
+summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>实时在线 · 交互设计 05</h1>
+    <p>在概览卡片、网站详情和菜单栏加入「当前在线」。数值来自 Umami <code>/websites/:id/active</code>，口径为最近 5 分钟内的独立访客，与上方时间范围无关。设计稿只使用演示数据。</p>
+  </div>
+  <div class="controls">
+    <label>场景 <select id="scenario">
+      <option value="normal">正常 · 有人在线</option>
+      <option value="zero">无人在线（0）</option>
+      <option value="failed">实时请求失败</option>
+      <option value="offline">离线 · 显示本地数据</option>
+    </select></label>
+    <label>菜单栏显示 <select id="menu">
+      <option value="live">实时在线合计（新增）</option>
+      <option value="liveSite">指定网站 · 实时在线（新增）</option>
+      <option value="total">合计访客</option>
+      <option value="icon">仅图标</option>
+    </select></label>
+    <label>外观 <select id="theme"><option value="light">浅色</option><option value="dark">深色</option></select></label>
+    <label><input type="checkbox" id="tip" checked> 显示菜单栏提示</label>
+  </div>
+
+  <div class="desk">
+    <div class="menu"><span>🔋</span><span>Wi-Fi</span>
+      <div class="status-item num" id="status"><span class="mark"><i></i><i></i><i></i></span><span id="statusText"></span><div class="tooltip" id="tooltip"></div></div>
+      <span>10月26日 周一 14:43</span>
+    </div>
+    <div class="workspaces">
+      <section>
+        <div class="frame-label"><span>01 · 网站概览</span><span>360pt</span></div>
+        <div class="popover">
+          <div class="head"><div class="nav">▮</div><div><div class="title">网站概览</div><div class="sub">2 个网站</div></div></div>
+          <div class="seg"><span class="on">最近 24 小时</span><span>最近 7 天</span><span>最近一个月</span></div>
+          <div class="range num">10月25日 14:43 — 10月26日 14:43</div>
+          <div id="cards"></div>
+          <div class="footer"><span id="updated"></span><span>管理网站</span></div>
+        </div>
+      </section>
+      <section>
+        <div class="frame-label"><span>02 · 网站详情</span><span>360pt</span></div>
+        <div class="popover">
+          <div class="head"><div class="nav">‹</div><div style="flex:1"><div class="title">Fanbar</div><div class="sub">fanbar.app</div></div><div class="nav">↗</div></div>
+          <div class="seg"><span class="on">最近 24 小时</span><span>最近 7 天</span><span>最近一个月</span></div>
+          <div class="range num">10月25日 14:43 — 10月26日 14:43</div>
+          <div class="detail-body" id="detail"></div>
+          <div class="footer"><span id="updated2"></span><span>打开仪表盘 ↗</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <details open>
+    <summary>设计要点</summary>
+    <ul>
+      <li><b>位置</b>：卡片里的在线标签放在域名下方，和右侧的同期变化同一行，卡片高度不变。详情页放在访客数右侧，比主数字小一级。</li>
+      <li><b>口径</b>：始终标注「最近 5 分钟」。不跟随时间范围切换，也不参与同期对比。</li>
+      <li><b>状态</b>：有人在线时显示绿色实心点和柔和的呼吸动画（开启「减少动态效果」时静止）。0 显示灰色空心点和「0 在线」。失败或无数据时显示「—」，不能把失败当成 0。</li>
+      <li><b>离线</b>：实时数据不保存到本地，也不从本地恢复。显示本地数据时，在线一律显示「—」，菜单栏实时模式也显示「—」。</li>
+      <li><b>刷新</b>：浮窗打开时每 30 秒刷新一次实时数据，与 60 秒的统计刷新分开。菜单栏选了实时模式时，浮窗关闭后也每 60 秒后台刷新；其他模式不在后台请求。</li>
+      <li><b>菜单栏</b>：「显示内容」新增「实时在线合计」，「指定网站」可选「访客 / 实时在线」两种口径。实时模式在图标右上角显示 4pt 绿点，与橙色的本地数据点位置相同、颜色不同。合计跨站不去重，提示里会说明。</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const sites = [
+  { name: "Fanbar", domain: "fanbar.app", visitors: 1284, live: 7, growth: "↑ 12.4% 较上期", color: "", bars: [3,4,2,5,7,6,8,9,6,7,10,12,9,8,11,13,12,10,9,8,7,9,11,12] },
+  { name: "Docs", domain: "docs.fanbar.app", visitors: 362, live: 2, growth: "↑ 3.1% 较上期", color: "green", bars: [2,1,2,3,2,4,3,5,4,3,4,6,5,4,3,5,6,4,3,4,5,4,3,2] },
+];
+const fmt = n => n.toLocaleString("zh-CN");
+
+function liveFor(site, s) {
+  if (s === "zero") return 0;
+  if (s === "failed" || s === "offline") return null;
+  return site.live;
+}
+function chip(value) {
+  if (value === null) return `<span class="live unknown num">— 在线</span>`;
+  return `<span class="live ${value === 0 ? "zero" : ""} num"><i></i>${fmt(value)} 在线</span>`;
+}
+
+function render() {
+  const s = $("scenario").value, m = $("menu").value;
+  document.documentElement.dataset.theme = $("theme").value;
+  const offline = s === "offline";
+
+  $("cards").innerHTML = sites.map(site => `
+    <div class="card">
+      <div class="row"><div><div class="name">${site.name}</div><div class="domain">${site.domain}</div></div>
+        <div class="count num">${fmt(site.visitors)}<small>访客</small></div></div>
+      <div class="meta">${chip(liveFor(site, s))}<span class="growth">${site.growth}</span></div>
+      <div class="bars ${site.color}">${site.bars.map(h => `<b style="height:${h * 7}%"></b>`).join("")}</div>
+      <div class="axis num"><span>14:00</span><span>02:00</span><span>14:00</span></div>
+      <div class="stats"><div><span>浏览量</span><strong class="num">${fmt(site.visitors * 3)}</strong></div><div><span>跳出率</span><strong>41%</strong></div><div><span>平均时长</span><strong>1分12秒</strong></div></div>
+      ${offline ? `<div class="note">本地数据 · 10月26日 14:20 保存</div>` : ""}
+    </div>`).join("");
+
+  const f = sites[0], fl = liveFor(f, s);
+  const blockClass = fl === null ? (s === "failed" ? "unknown failed" : "unknown") : fl === 0 ? "zero" : "";
+  const hint = s === "failed" ? "实时数据获取失败" : offline ? "离线时不显示实时数据" : "最近 5 分钟 · 30 秒刷新";
+  $("detail").innerHTML = `
+    <div class="hero">
+      <div><div class="label">访客数</div><div class="big num">${fmt(f.visitors)}</div></div>
+      <div class="live-block ${blockClass}">
+        <div class="label"><i></i>当前在线</div>
+        <div class="value num">${fl === null ? "—" : fmt(fl)}<small>人</small></div>
+        <div class="hint">${hint}</div>
+      </div>
+    </div>
+    <div class="growth-line">${f.growth}</div>
+    <div class="stats" style="margin-top:14px"><div><span>浏览量</span><strong class="num">3,852</strong></div><div><span>跳出率</span><strong>41%</strong></div><div><span>平均时长</span><strong>1分12秒</strong></div></div>
+    <div class="section">会话趋势<span>每小时</span></div>
+    <div class="bars" style="height:90px">${f.bars.map(h => `<b style="height:${h * 7}%"></b>`).join("")}</div>
+    <div class="tabs"><span class="on">热门页面</span><span>流量来源</span><span>UTM</span><span>位置</span><span>事件</span></div>`;
+
+  const updated = offline ? "本地数据 · 14:20:05" : "14:43:50 已刷新";
+  $("updated").textContent = updated; $("updated2").textContent = updated;
+
+  // Menu bar
+  const st = $("status"), live = m === "live" || m === "liveSite";
+  const values = sites.map(x => liveFor(x, s));
+  let text = "", tip = "";
+  if (m === "icon") { text = ""; tip = "Umami · 仅图标"; }
+  else if (m === "total") { text = offline ? "1.6K" : fmt(1646); tip = `Umami · 最近 24 小时 · 1,646 · 已选网站访客合计（跨站未去重）`; }
+  else {
+    const chosen = m === "liveSite" ? [values[0]] : values;
+    const sum = chosen.includes(null) ? null : chosen.reduce((a, b) => a + b, 0);
+    text = sum === null ? "—" : fmt(sum);
+    const source = m === "liveSite" ? "Fanbar" : "已选网站在线合计（跨站未去重）";
+    tip = `Umami · 当前在线 · ${sum === null ? "数据不可用" : sum} · ${source}\n最近 5 分钟内的访客`;
+    if (s === "failed") tip += "\n实时数据获取失败，下次刷新将重试";
+    if (offline) tip += "\n离线时不显示实时数据";
+  }
+  st.className = "status-item num" + (m === "icon" ? " icon-only" : "") + (live && text !== "—" ? " live" : "") + (!live && offline && m !== "icon" ? " live cached" : "");
+  $("statusText").textContent = text;
+  $("tooltip").textContent = tip; $("tooltip").hidden = !$("tip").checked;
+}
+["scenario", "menu", "theme", "tip"].forEach(id => $(id).addEventListener("change", render));
+render();
+</script>
+</body>
+</html>

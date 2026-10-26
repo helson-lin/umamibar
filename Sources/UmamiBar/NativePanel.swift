@@ -1,6 +1,6 @@
 import AppKit
 
-struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil; var color = 0; var pinned = false; var rangeStart: Date? = nil; var rangeEnd: Date? = nil; var savedAt: Date? = nil; var cached = false }
+struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil; var color = 0; var pinned = false; var rangeStart: Date? = nil; var rangeEnd: Date? = nil; var savedAt: Date? = nil; var cached = false; var live: Int? = nil; var liveFailed = false }
 struct PanelState {
     var screen: String; var loading: Bool
     var period: Period; var start: Date; var end: Date; var updated: String
@@ -165,6 +165,41 @@ private func drawGrowth(_ site: PanelSite, rect: NSRect) {
     }
     text(change, rect, size: 9, color: color, alignment: .right)
 }
+/// "● 7 在线" beside the growth line; the dot itself is a LiveDot subview placed at origin + (5, 5).
+private func drawLiveChip(_ live: Int?, at origin: NSPoint) {
+    let label = live.map { L("%@ 在线", NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal)) } ?? L("— 在线")
+    let color = (live ?? 0) > 0 ? Ink.green : Ink.secondary
+    let string = NSAttributedString(string: label, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium), .foregroundColor: color])
+    let inset: CGFloat = live == nil ? 0 : 15
+    if let live = live {
+        let wash = live > 0 ? Ink.green.withAlphaComponent(Ink.dark ? 0.16 : 0.09) : NSColor(white: 0.5, alpha: Ink.dark ? 0.18 : 0.1)
+        fill(NSRect(x: origin.x, y: origin.y, width: inset + string.size().width + 6, height: 15), wash, radius: 7.5)
+    }
+    string.draw(at: NSPoint(x: origin.x + inset, y: origin.y + 1.5))
+}
+/// The live marker: a filled dot that breathes while anyone is online, a hollow ring at zero, hidden when unknown.
+final class LiveDot: NSView {
+    var count: Int? { didSet { if count != oldValue { restyle() } } }
+    override init(frame: NSRect) { super.init(frame: frame); wantsLayer = true; restyle() }
+    required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); restyle() }
+    private func restyle() {
+        guard let layer = layer else { return }
+        isHidden = count == nil
+        let previous = NSAppearance.current; NSAppearance.current = effectiveAppearance; defer { NSAppearance.current = previous }
+        let active = (count ?? 0) > 0
+        layer.cornerRadius = bounds.width / 2
+        layer.backgroundColor = active ? Ink.green.cgColor : NSColor.clear.cgColor
+        layer.borderWidth = active ? 0 : 1; layer.borderColor = Ink.secondary.cgColor
+        layer.removeAnimation(forKey: "breathe")
+        guard active, !Motion.reduced else { return }
+        let breathe = CABasicAnimation(keyPath: "opacity")
+        breathe.fromValue = 1; breathe.toValue = 0.35; breathe.duration = 1.2; breathe.autoreverses = true; breathe.repeatCount = .infinity
+        breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(breathe, forKey: "breathe")
+    }
+}
 private func drawStats(_ stats: Stats?, y: CGFloat) {
     let fields = [(L("浏览量"), stats?.pageviews.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"), (L("跳出率"), stats?.bounceText ?? "—"), (L("平均时长"), stats?.durationText ?? "—")]
     for (i, field) in fields.enumerated() {
@@ -177,6 +212,7 @@ private func drawStats(_ stats: Stats?, y: CGFloat) {
 final class SiteCard: FlippedView {
     private var site: PanelSite; private let index: Int; private var state: PanelState
     private let chart = ChartView(frame: NSRect(x: 20, y: 74, width: 320, height: 65))
+    private let liveDot = LiveDot(frame: NSRect(x: 25, y: 56, width: 5, height: 5))
     var open: (() -> Void)?
     /// Cards can be updated in place only while the website and card height stay the same.
     static func layoutKey(_ site: PanelSite) -> String { site.website.id + (site.error == nil ? "" : "#error") + (site.cached ? "#cached" : "") + (site.pinned ? "#pinned" : "") }
@@ -187,8 +223,9 @@ final class SiteCard: FlippedView {
         let openButton = PaintedButton("", frame: NSRect(x: 9, y: 9, width: 240, height: 48)) { [weak self] in self?.open?() }; openButton.toolTip = L("查看 %@ 详情", site.website.name); openButton.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(openButton)
         chart.points = site.points ?? []; chart.colorIndex = site.color; chart.showsScale = false
         chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(chart)
+        liveDot.count = site.live; addSubview(liveDot)
     }
-    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; needsDisplay = true }
+    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; liveDot.count = site.live; needsDisplay = true }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
         if index > 0 { fill(NSRect(x: 20, y: 0, width: 320, height: 0.5), Ink.line) }
@@ -200,6 +237,7 @@ final class SiteCard: FlippedView {
         line.append(NSAttributedString(string: " " + L("访客"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
         line.draw(at: NSPoint(x: bounds.width - 20 - line.size().width, y: 17))
         drawGrowth(site, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
+        drawLiveChip(site.live, at: NSPoint(x: 20, y: 51))
         do {
             if site.points == nil { text(state.loading ? L("正在加载…") : site.error != nil && site.total == nil ? L("该范围暂无已保存数据") : L("趋势暂无数据"), NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
             let formatter = Formats.axis(state.period)
@@ -217,16 +255,22 @@ final class SiteCard: FlippedView {
 final class DetailBody: FlippedView {
     private(set) var site: PanelSite; private(set) var state: PanelState
     private let chart = ChartView(frame: NSRect(x: 20, y: 181, width: 320, height: 90))
+    private let liveDot = LiveDot(frame: NSRect(x: 0, y: 23, width: 6, height: 6))
     var onBreakdown: ((String) -> Void)?
     var onDimension: ((DetailDimension) -> Void)?
     var onRetry: (() -> Void)?
     init(frame: NSRect, site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; super.init(frame: frame)
-        chart.colorIndex = site.color; chart.points = site.points ?? []; addSubview(chart); addControls()
+        chart.colorIndex = site.color; chart.points = site.points ?? []; addSubview(chart); addSubview(liveDot); placeLiveDot(); addControls()
+    }
+    /// The dot sits just left of the right-aligned "当前在线" label.
+    private func placeLiveDot() {
+        let width = NSAttributedString(string: L("当前在线"), attributes: [.font: NSFont.systemFont(ofSize: 10)]).size().width
+        liveDot.frame.origin.x = 340 - ceil(width) - 11; liveDot.count = site.live
     }
     func update(site: PanelSite, state: PanelState) {
-        self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []
-        subviews.filter { $0 !== chart }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
+        self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; placeLiveDot()
+        subviews.filter { $0 !== chart && $0 !== liveDot }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
     }
     private func addControls() {
         for (i, value) in ["pages", "sources", "utm", "location", "events"].enumerated() {
@@ -256,7 +300,14 @@ final class DetailBody: FlippedView {
     override func draw(_ dirtyRect: NSRect) {
         text(L("访客数"), NSRect(x: 20, y: 20, width: 120, height: 16), size: 10, color: Ink.secondary)
         text(site.total.map(String.init) ?? "—", NSRect(x: 20, y: 40, width: 190, height: 43), size: 34, weight: .medium)
-        drawGrowth(site, rect: NSRect(x: 185, y: 65, width: 155, height: 16))
+        text(L("当前在线"), NSRect(x: 200, y: 19, width: 140, height: 14), size: 10, color: Ink.secondary, alignment: .right)
+        let value = NSMutableAttributedString(string: site.live.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—", attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 20, weight: .medium), .foregroundColor: Ink.text])
+        value.append(NSAttributedString(string: " " + L("人"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
+        value.draw(at: NSPoint(x: 340 - value.size().width, y: 33))
+        // Offline data never carries a live count, so explain the dash before blaming the request.
+        let hint = site.live != nil ? L("最近 5 分钟 · 30 秒刷新") : site.cached ? L("离线时不显示实时数据") : site.liveFailed ? L("实时数据获取失败") : L("正在获取…")
+        text(hint, NSRect(x: 180, y: 59, width: 160, height: 13), size: 9, color: site.live == nil && !site.cached && site.liveFailed ? .systemOrange : Ink.secondary, alignment: .right)
+        drawGrowth(site, rect: NSRect(x: 185, y: 74, width: 155, height: 14))
         drawStats(site.stats, y: 100)
         fill(NSRect(x: 20, y: 148, width: 320, height: 0.5), Ink.line)
         text(L("会话趋势"), NSRect(x: 20, y: 161, width: 160, height: 17), weight: .semibold)
