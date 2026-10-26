@@ -71,7 +71,7 @@ final class NativePanel: FlippedView {
             } else {
                 let scroll = NSScrollView(frame: frame)
                 scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
-                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 610), site: selected, state: next)
+                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 644), site: selected, state: next)
                 body.onBreakdown = { [weak self] value in self?.action("breakdown", ["value": value]) }
                 body.onDimension = { [weak self] value in self?.action("dimension", ["value": value.rawValue]) }
                 body.onRetry = { [weak self] in self?.action("detailRetry") }
@@ -165,18 +165,6 @@ private func drawGrowth(_ site: PanelSite, rect: NSRect) {
     }
     text(change, rect, size: 9, color: color, alignment: .right)
 }
-/// "● 7 在线" beside the growth line; the dot itself is a LiveDot subview placed at origin + (5, 5).
-private func drawLiveChip(_ live: Int?, at origin: NSPoint) {
-    let label = live.map { L("%@ 在线", NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal)) } ?? L("— 在线")
-    let color = (live ?? 0) > 0 ? Ink.green : Ink.secondary
-    let string = NSAttributedString(string: label, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium), .foregroundColor: color])
-    let inset: CGFloat = live == nil ? 0 : 15
-    if let live = live {
-        let wash = live > 0 ? Ink.green.withAlphaComponent(Ink.dark ? 0.16 : 0.09) : NSColor(white: 0.5, alpha: Ink.dark ? 0.18 : 0.1)
-        fill(NSRect(x: origin.x, y: origin.y, width: inset + string.size().width + 6, height: 15), wash, radius: 7.5)
-    }
-    string.draw(at: NSPoint(x: origin.x + inset, y: origin.y + 1.5))
-}
 /// The live marker: a filled dot that breathes while anyone is online, a hollow ring at zero, hidden when unknown.
 final class LiveDot: NSView {
     var count: Int? { didSet { if count != oldValue { restyle() } } }
@@ -212,7 +200,7 @@ private func drawStats(_ stats: Stats?, y: CGFloat) {
 final class SiteCard: FlippedView {
     private var site: PanelSite; private let index: Int; private var state: PanelState
     private let chart = ChartView(frame: NSRect(x: 20, y: 74, width: 320, height: 65))
-    private let liveDot = LiveDot(frame: NSRect(x: 25, y: 56, width: 5, height: 5))
+    private let liveDot = LiveDot(frame: NSRect(x: 0, y: 22, width: 5, height: 5))
     var open: (() -> Void)?
     /// Cards can be updated in place only while the website and card height stay the same.
     static func layoutKey(_ site: PanelSite) -> String { site.website.id + (site.error == nil ? "" : "#error") + (site.cached ? "#cached" : "") + (site.pinned ? "#pinned" : "") }
@@ -223,21 +211,35 @@ final class SiteCard: FlippedView {
         let openButton = PaintedButton("", frame: NSRect(x: 9, y: 9, width: 240, height: 48)) { [weak self] in self?.open?() }; openButton.toolTip = L("查看 %@ 详情", site.website.name); openButton.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(openButton)
         chart.points = site.points ?? []; chart.colorIndex = site.color; chart.showsScale = false
         chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(chart)
-        liveDot.count = site.live; addSubview(liveDot)
+        addSubview(liveDot); placeLiveDot()
     }
-    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; liveDot.count = site.live; needsDisplay = true }
+    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; placeLiveDot(); needsDisplay = true }
+    /// The live count follows the name ("Fanbar ● 7"); a long name truncates so the count always stays visible.
+    private var nameLayout: (x: CGFloat, width: CGFloat, liveX: CGFloat) {
+        let x: CGFloat = site.pinned ? 35 : 20, room = 238 - x
+        let liveWidth = ceil(liveCount.size().width) + (site.live == nil ? 0 : 9) + 7
+        let name = NSAttributedString(string: site.website.name, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)])
+        let width = min(ceil(name.size().width) + 1, room - liveWidth)
+        return (x, width, x + width + 7)
+    }
+    private var liveCount: NSAttributedString {
+        let value = site.live.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"
+        return NSAttributedString(string: value, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium), .foregroundColor: (site.live ?? 0) > 0 ? Ink.green : Ink.secondary])
+    }
+    private func placeLiveDot() { liveDot.frame.origin.x = nameLayout.liveX; liveDot.count = site.live }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
         if index > 0 { fill(NSRect(x: 20, y: 0, width: 320, height: 0.5), Ink.line) }
         if site.pinned { drawPin(in: NSRect(x: 20, y: 20, width: 10, height: 11), color: Ink.secondary) }
-        text(site.website.name, NSRect(x: site.pinned ? 35 : 20, y: 17, width: site.pinned ? 203 : 218, height: 17), size: 12, weight: .medium)
+        let layout = nameLayout
+        text(site.website.name, NSRect(x: layout.x, y: 17, width: layout.width, height: 17), size: 12, weight: .medium)
+        liveCount.draw(at: NSPoint(x: layout.liveX + (site.live == nil ? 0 : 9), y: 19))
         text(site.website.domain, NSRect(x: 20, y: 36, width: 218, height: 16), size: 10, color: Ink.secondary)
         let count = site.total.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"
         let line = NSMutableAttributedString(string: count, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .medium), .foregroundColor: Ink.text])
         line.append(NSAttributedString(string: " " + L("访客"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
         line.draw(at: NSPoint(x: bounds.width - 20 - line.size().width, y: 17))
         drawGrowth(site, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
-        drawLiveChip(site.live, at: NSPoint(x: 20, y: 51))
         do {
             if site.points == nil { text(state.loading ? L("正在加载…") : site.error != nil && site.total == nil ? L("该范围暂无已保存数据") : L("趋势暂无数据"), NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
             let formatter = Formats.axis(state.period)
@@ -254,8 +256,8 @@ final class SiteCard: FlippedView {
 }
 final class DetailBody: FlippedView {
     private(set) var site: PanelSite; private(set) var state: PanelState
-    private let chart = ChartView(frame: NSRect(x: 20, y: 181, width: 320, height: 90))
-    private let liveDot = LiveDot(frame: NSRect(x: 0, y: 23, width: 6, height: 6))
+    private let chart = ChartView(frame: NSRect(x: 20, y: 215, width: 320, height: 90))
+    private let liveDot = LiveDot(frame: NSRect(x: 20, y: 18, width: 6, height: 6))
     var onBreakdown: ((String) -> Void)?
     var onDimension: ((DetailDimension) -> Void)?
     var onRetry: (() -> Void)?
@@ -263,21 +265,17 @@ final class DetailBody: FlippedView {
         self.site = site; self.state = state; super.init(frame: frame)
         chart.colorIndex = site.color; chart.points = site.points ?? []; addSubview(chart); addSubview(liveDot); placeLiveDot(); addControls()
     }
-    /// The dot sits just left of the right-aligned "当前在线" label.
-    private func placeLiveDot() {
-        let width = NSAttributedString(string: L("当前在线"), attributes: [.font: NSFont.systemFont(ofSize: 10)]).size().width
-        liveDot.frame.origin.x = 340 - ceil(width) - 11; liveDot.count = site.live
-    }
+    private func placeLiveDot() { liveDot.count = site.live }
     func update(site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; placeLiveDot()
         subviews.filter { $0 !== chart && $0 !== liveDot }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
     }
     private func addControls() {
         for (i, value) in ["pages", "sources", "utm", "location", "events"].enumerated() {
-            let b = PaintedButton([L("热门页面"), L("流量来源"), "UTM", L("位置"), L("事件")][i], frame: NSRect(x: 16+CGFloat(i)*66, y: 301, width: 64, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
+            let b = PaintedButton([L("热门页面"), L("流量来源"), "UTM", L("位置"), L("事件")][i], frame: NSRect(x: 16+CGFloat(i)*66, y: 335, width: 64, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
         }
         if state.breakdown == "utm" || state.breakdown == "location" {
-            let popup = NSPopUpButton(frame: NSRect(x: 112, y: 344, width: 228, height: 26), pullsDown: false)
+            let popup = NSPopUpButton(frame: NSRect(x: 112, y: 378, width: 228, height: 26), pullsDown: false)
             for option in DetailDimension.options(for: state.breakdown) {
                 popup.addItem(withTitle: option.title)
                 popup.lastItem?.representedObject = option.rawValue
@@ -289,7 +287,7 @@ final class DetailBody: FlippedView {
             addSubview(popup)
         }
         if state.detailError != nil {
-            let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 445, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
+            let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 479, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
         }
     }
     @objc private func dimensionChanged(_ sender: NSPopUpButton) {
@@ -298,41 +296,43 @@ final class DetailBody: FlippedView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
-        text(L("访客数"), NSRect(x: 20, y: 20, width: 120, height: 16), size: 10, color: Ink.secondary)
-        text(site.total.map(String.init) ?? "—", NSRect(x: 20, y: 40, width: 190, height: 43), size: 34, weight: .medium)
-        text(L("当前在线"), NSRect(x: 200, y: 19, width: 140, height: 14), size: 10, color: Ink.secondary, alignment: .right)
-        let value = NSMutableAttributedString(string: site.live.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—", attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 20, weight: .medium), .foregroundColor: Ink.text])
-        value.append(NSAttributedString(string: " " + L("人"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
-        value.draw(at: NSPoint(x: 340 - value.size().width, y: 33))
+        text(L("访客数"), NSRect(x: 20, y: 54, width: 120, height: 16), size: 10, color: Ink.secondary)
+        text(site.total.map(String.init) ?? "—", NSRect(x: 20, y: 74, width: 190, height: 43), size: 34, weight: .medium)
+        // The live strip stands apart from the period stats: it always describes the last 5 minutes.
+        let live = NSMutableAttributedString(string: L("当前在线") + " ", attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary])
+        live.append(NSAttributedString(string: site.live.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—", attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium), .foregroundColor: (site.live ?? 0) > 0 ? Ink.green : Ink.text]))
+        live.append(NSAttributedString(string: " " + L("人"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
+        live.draw(at: NSPoint(x: site.live == nil ? 20 : 32, y: 13))
         // Offline data never carries a live count, so explain the dash before blaming the request.
         let hint = site.live != nil ? L("最近 5 分钟 · 30 秒刷新") : site.cached ? L("离线时不显示实时数据") : site.liveFailed ? L("实时数据获取失败") : L("正在获取…")
-        text(hint, NSRect(x: 180, y: 59, width: 160, height: 13), size: 9, color: site.live == nil && !site.cached && site.liveFailed ? .systemOrange : Ink.secondary, alignment: .right)
-        drawGrowth(site, rect: NSRect(x: 185, y: 74, width: 155, height: 14))
-        drawStats(site.stats, y: 100)
-        fill(NSRect(x: 20, y: 148, width: 320, height: 0.5), Ink.line)
-        text(L("会话趋势"), NSRect(x: 20, y: 161, width: 160, height: 17), weight: .semibold)
-        text(state.period == .day ? L("每小时") : L("每天"), NSRect(x: 265, y: 161, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
-        if site.points == nil { text(L("趋势暂无数据"), NSRect(x: 90, y: 214, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
+        text(hint, NSRect(x: 160, y: 15, width: 180, height: 13), size: 9, color: site.live == nil && !site.cached && site.liveFailed ? .systemOrange : Ink.secondary, alignment: .right)
+        fill(NSRect(x: 20, y: 38, width: 320, height: 0.5), Ink.line)
+        drawGrowth(site, rect: NSRect(x: 185, y: 99, width: 155, height: 16))
+        drawStats(site.stats, y: 134)
+        fill(NSRect(x: 20, y: 182, width: 320, height: 0.5), Ink.line)
+        text(L("会话趋势"), NSRect(x: 20, y: 195, width: 160, height: 17), weight: .semibold)
+        text(state.period == .day ? L("每小时") : L("每天"), NSRect(x: 265, y: 195, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
+        if site.points == nil { text(L("趋势暂无数据"), NSRect(x: 90, y: 248, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
         let formatter = Formats.axis(state.period)
-        text(formatter.string(from: state.start), NSRect(x: 20, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary)
-        text(formatter.string(from: state.end), NSRect(x: 240, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary, alignment: .right)
-        fill(NSRect(x: 20, y: 335, width: 320, height: 0.5), Ink.line)
+        text(formatter.string(from: state.start), NSRect(x: 20, y: 313, width: 100, height: 14), size: 9, color: Ink.secondary)
+        text(formatter.string(from: state.end), NSRect(x: 240, y: 313, width: 100, height: 14), size: 9, color: Ink.secondary, alignment: .right)
+        fill(NSRect(x: 20, y: 369, width: 320, height: 0.5), Ink.line)
         let offset: CGFloat = state.breakdown == "utm" || state.breakdown == "location" ? 44 : 0
-        if offset > 0 { text(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"), NSRect(x: 20, y: 351, width: 88, height: 16), size: 10, color: Ink.secondary) }
-        text(state.dimension.title, NSRect(x: 20, y: 348+offset, width: 160, height: 15), size: 9, color: Ink.secondary)
-        text(state.breakdown == "events" ? L("次数 / 占全部事件") : L("次数 / 前5项占比"), NSRect(x: 210, y: 348+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
-        if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        else if let error = state.detailError { text(error, NSRect(x: 20, y: 377+offset, width: 320, height: 24), size: 10, color: .systemOrange) }
+        if offset > 0 { text(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"), NSRect(x: 20, y: 385, width: 88, height: 16), size: 10, color: Ink.secondary) }
+        text(state.dimension.title, NSRect(x: 20, y: 382+offset, width: 160, height: 15), size: 9, color: Ink.secondary)
+        text(state.breakdown == "events" ? L("次数 / 占全部事件") : L("次数 / 前5项占比"), NSRect(x: 210, y: 382+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
+        if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 417+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        else if let error = state.detailError { text(error, NSRect(x: 20, y: 411+offset, width: 320, height: 24), size: 10, color: .systemOrange) }
         else if let rows = state.rows, !rows.isEmpty {
             // Events rows cover every event, so their shares are of the total; other breakdowns hold only the top 5.
             let sum = rows.reduce(0) { $0 + $1.y }
             for (i,row) in rows.prefix(5).enumerated() {
-                let y = CGFloat(371+i*32)+offset; let ratio = sum > 0 ? row.y/sum : 0
+                let y = CGFloat(405+i*32)+offset; let ratio = sum > 0 ? row.y/sum : 0
                 fill(NSRect(x: 20, y: y, width: 320*ratio, height: 29), Palette.swatch(site.color).base.withAlphaComponent(0.09), radius: 4)
                 text(state.dimension.label(for: row.x), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
                 text("\(Int(row.y))   \(Int((ratio*100).rounded()))%", NSRect(x: 235, y: y+8, width: 97, height: 15), size: 10, alignment: .right)
             }
-        } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        text(state.breakdown == "utm" ? L("未携带字段显示「未设置」· 占比按前 5 项计算") : state.breakdown == "location" ? L("缺失位置显示「未知位置」· 占比按前 5 项计算") : state.breakdown == "events" ? L("仅展示前 5 项 · 占比按该时段全部事件计算") : L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 535+offset, width: 320, height: 17), size: 9, color: Ink.secondary)
+        } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 417+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        text(state.breakdown == "utm" ? L("未携带字段显示「未设置」· 占比按前 5 项计算") : state.breakdown == "location" ? L("缺失位置显示「未知位置」· 占比按前 5 项计算") : state.breakdown == "events" ? L("仅展示前 5 项 · 占比按该时段全部事件计算") : L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 569+offset, width: 320, height: 17), size: 9, color: Ink.secondary)
     }
 }

@@ -61,14 +61,15 @@ html[data-theme=dark] .frame-label { color: #a6b6a3; }
 .row { display: flex; justify-content: space-between; align-items: flex-start; }
 .name { font-size: 12px; font-weight: 500; } .domain { font-size: 10px; color: var(--muted); margin-top: 4px; }
 .count { font-size: 24px; font-weight: 500; text-align: right; } .count small { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 4px; }
-/* Live chip shares the growth line: chip left under the domain, growth right. */
-.meta { display: flex; justify-content: space-between; align-items: center; margin-top: 3px; height: 16px; font-size: 9px; }
+/* Live count follows the site name; the growth line keeps the right column to itself. */
+.meta { display: flex; justify-content: flex-end; align-items: center; margin-top: 3px; height: 16px; font-size: 9px; }
+.name { display: flex; align-items: center; gap: 7px; }
 .growth { color: var(--green); }
-.live { display: inline-flex; align-items: center; gap: 5px; height: 16px; padding: 0 6px 0 5px; border-radius: 8px; background: var(--green-wash); color: var(--green); font-size: 9px; font-weight: 500; }
+.live { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font-size: 10px; font-weight: 500; }
 .live i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-.live.zero { background: var(--well); color: var(--muted); }
+.live.zero { color: var(--muted); }
 .live.zero i { background: none; box-shadow: inset 0 0 0 1px currentColor; }
-.live.unknown { background: none; color: var(--muted); padding-left: 0; }
+.live.unknown { color: var(--muted); }
 .live.unknown i { display: none; }
 .bars { height: 65px; display: flex; align-items: flex-end; gap: 2px; margin-top: 8px; }
 .bars b { flex: 1; border-radius: 2px 2px 0 0; background: linear-gradient(#ffad78, #e67b32); }
@@ -85,7 +86,16 @@ html[data-theme=dark] .frame-label { color: #a6b6a3; }
 .hero { display: flex; justify-content: space-between; align-items: flex-start; }
 .hero .label { font-size: 10px; color: var(--muted); }
 .hero .big { font-size: 34px; font-weight: 500; margin-top: 4px; }
-/* Live block: right of the visitor count, above the growth line. */
+/* Live strip: its own row above the visitor count, so the growth line stays with visitors. */
+.live-strip { display: flex; justify-content: space-between; align-items: center; padding: 6px 0 12px; border-bottom: .5px solid var(--line); margin-bottom: 14px; }
+.live-strip .label { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
+.live-strip .label b { font-size: 12px; font-weight: 500; color: var(--ink); }
+.live-strip:not(.zero):not(.unknown) .label b { color: var(--green); }
+.live-strip .label i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.live-strip.zero .label i { background: none; box-shadow: inset 0 0 0 1px var(--muted); }
+.live-strip.unknown .label i { display: none; }
+.live-strip .hint { font-size: 9px; color: var(--muted); }
+.live-strip.failed .hint { color: var(--orange); }
 .live-block { text-align: right; padding-top: 1px; }
 .live-block .label { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .live-block .label i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
@@ -103,7 +113,7 @@ html[data-theme=dark] .frame-label { color: #a6b6a3; }
 .tabs span.on { background: var(--control); color: var(--ink); font-weight: 500; box-shadow: 0 1px 3px #00000010; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .live:not(.zero):not(.unknown) i, .live-block:not(.zero):not(.unknown):not(.failed) .label i { animation: breathe 2.4s ease-in-out infinite; }
+  .live:not(.zero):not(.unknown) i, .live-strip:not(.zero):not(.unknown) .label i { animation: breathe 2.4s ease-in-out infinite; }
 }
 /* One soft pulse that signals "live" without drawing the eye across the whole overview. */
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
@@ -167,7 +177,7 @@ summary { cursor: pointer; color: var(--ink); font-weight: 500; }
   <details open>
     <summary>设计要点</summary>
     <ul>
-      <li><b>位置</b>：卡片里的在线标签放在域名下方，和右侧的同期变化同一行，卡片高度不变。详情页放在访客数右侧，比主数字小一级。</li>
+      <li><b>位置</b>：卡片里的在线人数紧跟在网站名称后（「Fanbar ● 7」），名称过长时截断名称、保留人数，卡片高度不变。详情页在访客数上方单独一行，用细线与时段统计分开；同期变化回到访客数右侧。</li>
       <li><b>口径</b>：始终标注「最近 5 分钟」。不跟随时间范围切换，也不参与同期对比。</li>
       <li><b>状态</b>：有人在线时显示绿色实心点和柔和的呼吸动画（开启「减少动态效果」时静止）。0 显示灰色空心点和「0 在线」。失败或无数据时显示「—」，不能把失败当成 0。</li>
       <li><b>离线</b>：实时数据不保存到本地，也不从本地恢复。显示本地数据时，在线一律显示「—」，菜单栏实时模式也显示「—」。</li>
@@ -191,8 +201,8 @@ function liveFor(site, s) {
   return site.live;
 }
 function chip(value) {
-  if (value === null) return `<span class="live unknown num">— 在线</span>`;
-  return `<span class="live ${value === 0 ? "zero" : ""} num"><i></i>${fmt(value)} 在线</span>`;
+  if (value === null) return `<span class="live unknown num">—</span>`;
+  return `<span class="live ${value === 0 ? "zero" : ""} num"><i></i>${fmt(value)}</span>`;
 }
 
 function render() {
@@ -202,9 +212,9 @@ function render() {
 
   $("cards").innerHTML = sites.map(site => `
     <div class="card">
-      <div class="row"><div><div class="name">${site.name}</div><div class="domain">${site.domain}</div></div>
+      <div class="row"><div><div class="name">${site.name}${chip(liveFor(site, s))}</div><div class="domain">${site.domain}</div></div>
         <div class="count num">${fmt(site.visitors)}<small>访客</small></div></div>
-      <div class="meta">${chip(liveFor(site, s))}<span class="growth">${site.growth}</span></div>
+      <div class="meta"><span class="growth">${site.growth}</span></div>
       <div class="bars ${site.color}">${site.bars.map(h => `<b style="height:${h * 7}%"></b>`).join("")}</div>
       <div class="axis num"><span>14:00</span><span>02:00</span><span>14:00</span></div>
       <div class="stats"><div><span>浏览量</span><strong class="num">${fmt(site.visitors * 3)}</strong></div><div><span>跳出率</span><strong>41%</strong></div><div><span>平均时长</span><strong>1分12秒</strong></div></div>
@@ -215,15 +225,14 @@ function render() {
   const blockClass = fl === null ? (s === "failed" ? "unknown failed" : "unknown") : fl === 0 ? "zero" : "";
   const hint = s === "failed" ? "实时数据获取失败" : offline ? "离线时不显示实时数据" : "最近 5 分钟 · 30 秒刷新";
   $("detail").innerHTML = `
+    <div class="live-strip ${blockClass}">
+      <div class="label"><i></i>当前在线 <b class="num">${fl === null ? "—" : fmt(fl)}</b> 人</div>
+      <div class="hint">${hint}</div>
+    </div>
     <div class="hero">
       <div><div class="label">访客数</div><div class="big num">${fmt(f.visitors)}</div></div>
-      <div class="live-block ${blockClass}">
-        <div class="label"><i></i>当前在线</div>
-        <div class="value num">${fl === null ? "—" : fmt(fl)}<small>人</small></div>
-        <div class="hint">${hint}</div>
-      </div>
+      <div class="growth-line" style="align-self:flex-end;padding-bottom:8px">${f.growth}</div>
     </div>
-    <div class="growth-line">${f.growth}</div>
     <div class="stats" style="margin-top:14px"><div><span>浏览量</span><strong class="num">3,852</strong></div><div><span>跳出率</span><strong>41%</strong></div><div><span>平均时长</span><strong>1分12秒</strong></div></div>
     <div class="section">会话趋势<span>每小时</span></div>
     <div class="bars" style="height:90px">${f.bars.map(h => `<b style="height:${h * 7}%"></b>`).join("")}</div>

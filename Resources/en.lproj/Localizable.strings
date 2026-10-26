@@ -193,8 +193,6 @@
 "未命名事件" = "Unnamed event";
 "次数 / 占全部事件" = "Count / share of all";
 "仅展示前 5 项 · 占比按该时段全部事件计算" = "Top 5 only · shares are of all events in range";
-"%@ 在线" = "%@ online";
-"— 在线" = "— online";
 "当前在线" = "Online now";
 "人" = "";
 "最近 5 分钟 · 30 秒刷新" = "Last 5 min · updates every 30s";
