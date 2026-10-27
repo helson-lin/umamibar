@@ -44,8 +44,18 @@ struct WebsiteLayout: Codable, Equatable {
 }
 
 enum MenuDisplay: String, CaseIterable {
-    case total, website, icon
-    var title: String { switch self { case .total: return L("合计访客"); case .website: return L("指定网站"); case .icon: return L("仅图标") } }
+    case total, live, website, websiteLive, icon
+    var title: String {
+        switch self {
+        case .total: return L("合计访客"); case .live: return L("实时在线合计")
+        case .website: return L("指定网站"); case .websiteLive: return L("指定网站 · 实时在线")
+        case .icon: return L("仅图标")
+        }
+    }
+    /// Shows one chosen website rather than the selected sites together.
+    var single: Bool { self == .website || self == .websiteLive }
+    /// Counts visitors active in the last 5 minutes instead of the overview period.
+    var isLive: Bool { self == .live || self == .websiteLive }
 }
 
 final class Preferences {
@@ -60,6 +70,11 @@ final class Preferences {
     var menuWebsiteID: String? {
         get { defaults.string(forKey: "menuWebsiteID") }
         set { defaults.set(newValue, forKey: "menuWebsiteID"); notify() }
+    }
+    /// Off by default: turning it on asks for notification permission first.
+    var alertsEnabled: Bool {
+        get { defaults.bool(forKey: "trafficAlerts") }
+        set { defaults.set(newValue, forKey: "trafficAlerts"); notify() }
     }
     var retainData: Bool {
         get { defaults.object(forKey: "retainSuccessfulData") as? Bool ?? true }
@@ -76,7 +91,7 @@ final class Preferences {
     }
     @discardableResult
     func reconcileMenuSource(selected: [String]) -> Bool {
-        guard menuDisplay == .website, !selected.contains(menuWebsiteID ?? "") else { return false }
+        guard menuDisplay.single, !selected.contains(menuWebsiteID ?? "") else { return false }
         defaults.set(MenuDisplay.total.rawValue, forKey: "menuDisplay")
         defaults.removeObject(forKey: "menuWebsiteID")
         notify()
@@ -90,13 +105,24 @@ struct MenuSummary {
     var title: String
     var tooltip: String
     var cached: Bool
-    static func make(mode: MenuDisplay, websiteID: String?, sites: [Website], records: [String: SiteSnapshot], period: Period, stale: Set<String>) -> MenuSummary {
-        let chosen = mode == .website ? sites.filter { $0.id == websiteID } : sites
+    /// The number is a live count; the menu bar marks it with a green dot.
+    var live = false
+    static func make(mode: MenuDisplay, websiteID: String?, sites: [Website], records: [String: SiteSnapshot], period: Period, stale: Set<String>, live: [String: Int] = [:], liveFailed: Bool = false) -> MenuSummary {
+        let chosen = mode.single ? sites.filter { $0.id == websiteID } : sites
+        if mode.isLive {
+            // Like visitor totals, a live total missing any site is shown as unavailable, not as a partial sum.
+            let values = chosen.compactMap { live[$0.id] }
+            let count = !chosen.isEmpty && values.count == chosen.count ? values.reduce(0, +) : nil
+            let source = mode == .websiteLive ? chosen.first?.name ?? L("指定网站") : L("已选网站在线合计（跨站未去重）")
+            var tooltip = L("Umami · 当前在线 · %@ · %@", count.map(String.init) ?? L("数据不可用"), source) + "\n" + L("最近 5 分钟内的访客")
+            if count == nil && liveFailed { tooltip += "\n" + L("实时数据获取失败，下次刷新将重试") }
+            return MenuSummary(count: count, title: chosen.isEmpty ? "" : " " + compact(count), tooltip: tooltip, cached: false, live: count != nil)
+        }
         let snapshots = chosen.compactMap { records[$0.id] }.filter { $0.period == period.rawValue }
         // A total across different query windows is misleading, even if every station has a value.
         let complete = !chosen.isEmpty && snapshots.count == chosen.count && Set(snapshots.map(\.end)).count == 1
         let count = complete ? snapshots.reduce(0) { $0 + $1.stats.visitors } : nil
-        let source = mode == .website ? chosen.first?.name ?? L("指定网站") : L("已选网站访客合计（跨站未去重）")
+        let source = mode.single ? chosen.first?.name ?? L("指定网站") : L("已选网站访客合计（跨站未去重）")
         var tooltip = L("Umami · %@ · %@ · %@", period.title, count.map(String.init) ?? L("数据不可用"), source)
         if complete, let snapshot = snapshots.first {
             tooltip += "\n" + Formats.range.string(from: snapshot.start) + " — " + Formats.range.string(from: snapshot.end)

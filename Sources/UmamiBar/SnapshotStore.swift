@@ -18,6 +18,8 @@ struct DetailSnapshot: Codable {
     let dimension: String
     let end: Date
     let rows: [MetricRow]
+    /// The row limit the rows were fetched with; snapshots from before "Show more" have none.
+    var limit: Int? = nil
 }
 
 final class SnapshotStore {
@@ -67,7 +69,8 @@ final class SnapshotStore {
     }
     func detail(base: URL, websiteID: String, period: Period, dimension: DetailDimension, end: Date) -> [MetricRow]? {
         let key = siteKey(websiteID, period.rawValue) + "|" + dimension.rawValue
-        guard let record = archive.details[base.absoluteString]?[key], record.end == end else { return nil }
+        // Rows saved under another limit would misstate how many items the shares cover.
+        guard let record = archive.details[base.absoluteString]?[key], record.end == end, record.limit == dimension.fetchLimit else { return nil }
         return record.rows
     }
     func allRecords(base: URL) -> [SiteSnapshot] { Array((archive.sites[base.absoluteString] ?? [:]).values) }

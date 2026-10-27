@@ -1,5 +1,6 @@
 import AppKit
 import Sparkle
+import UserNotifications
 
 @main
 struct UmamiBarMain {
@@ -14,7 +15,7 @@ struct UmamiBarMain {
         withExtendedLifetime(delegate) {}
     }
 }
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNUserNotificationCenterDelegate {
     private var item: NSStatusItem!
     private let popover = NSPopover()
     private let cacheIndicator = CacheIndicator(frame: .zero)
@@ -41,7 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 button.layoutSubtreeIfNeeded()
                 let rect = button.cell?.imageRect(forBounds: button.bounds) ?? .zero
                 self.cacheIndicator.frame = NSRect(x: rect.maxX - 3, y: rect.maxY - 3, width: 3, height: 3)
-                self.cacheIndicator.isHidden = !summary.cached
+                // Same spot, different meaning: orange for saved data, green for a live count.
+                self.cacheIndicator.live = summary.live
+                self.cacheIndicator.isHidden = !summary.cached && !summary.live
             }
         }
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -59,12 +62,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         item.button?.target = self; item.button?.action = #selector(toggle)
         cacheIndicator.isHidden = true; item.button?.addSubview(cacheIndicator)
         popover.contentViewController = controller; popover.behavior = .transient; popover.delegate = self
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            guard let self = self, self.popover.isShown else { return }; self.controller.refreshIfNeeded()
+        // Stats refresh at most once a minute while the popover is open; live counts every 30 seconds,
+        // and every minute in the background only when the menu bar shows a live number.
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if self.popover.isShown { self.controller.refreshIfNeeded(); self.controller.refreshLive() }
+            else if self.controller.showsLiveMenu { self.controller.refreshLive(maxAge: 55) }
+            // Traffic alerts run in the background whether or not the popover is open; checkAlerts limits itself to every 15 minutes.
+            self.controller.checkAlerts()
         }
+        if AlertNotifier.available { UNUserNotificationCenter.current().delegate = self }
         controller.updateMenu()
         controller.refreshIfNeeded()
+        if controller.showsLiveMenu { controller.refreshLive() }
         if controller.connection == nil, !CommandLine.arguments.contains("--launch-at-login") { openSettings(.connection) }
+    }
+    // Show alerts even while the popover is open; a click opens that site's detail.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if #available(macOS 11.0, *) { completionHandler([.banner, .list, .sound]) } else { completionHandler([.alert, .sound]) }
+    }
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let id = response.notification.request.content.userInfo[AlertNotifier.websiteKey] as? String {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if !self.popover.isShown { self.toggle() }
+                self.controller.openDetail(id)
+            }
+        }
+        completionHandler()
     }
     private func openSettings(_ tab: SettingsWindowController.Tab) {
         popover.performClose(nil)
@@ -92,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         else if let button = item.button {
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            controller.refreshIfNeeded()
+            controller.refreshIfNeeded(); controller.refreshLive()
         }
     }
 }
@@ -122,8 +147,18 @@ final class MainController: NSViewController {
     private var breakdown = "pages", dimension: DetailDimension = .pages
     private var utmDimension: DetailDimension = .utmSource, locationDimension: DetailDimension = .country
     private var detailLoading = false, detailToken = UUID()
+    /// Whether the breakdown lists every loaded row. Background refreshes keep it; choosing another site, tab, field or range collapses it.
+    private var detailExpanded = false
     private var detailTask: URLSessionDataTask?
     private var observers: [NSObjectProtocol] = []
+    /// Live counts are never saved: each expires after the 5-minute window it describes.
+    private var live: [String: (visitors: Int, at: Date)] = [:]
+    private var liveFailures = Set<String>()
+    private var liveTasks: [URLSessionDataTask] = []
+    private var liveAttempt: Date?, liveToken = UUID()
+    private var alertTasks: [URLSessionDataTask] = [], alertAttempt: Date?, alertToken = UUID()
+    private var alertsWereEnabled = false
+    private lazy var alerts = AlertTracker(defaults: preferences.defaults)
 
     init(preferences: Preferences = .shared, snapshots: SnapshotStore = .shared, api: API = API(), connectionOverride: Connection? = nil, selectedSites: [Website] = []) {
         self.preferences = preferences; self.snapshots = snapshots; self.api = api
@@ -139,13 +174,81 @@ final class MainController: NSViewController {
         screen = sites.isEmpty ? "empty" : "overview"
         _ = preferences.reconcileMenuSource(selected: sites.map(\.id))
         observers.append(NotificationCenter.default.addObserver(forName: Localization.changed, object: nil, queue: .main) { [weak self] _ in self?.publish() })
-        observers.append(NotificationCenter.default.addObserver(forName: Preferences.changed, object: preferences, queue: .main) { [weak self] _ in self?.sortSites(); self?.publish() })
+        alertsWereEnabled = preferences.alertsEnabled
+        observers.append(NotificationCenter.default.addObserver(forName: Preferences.changed, object: preferences, queue: .main) { [weak self] _ in
+            guard let self = self else { return }
+            self.sortSites(); self.publish()
+            if self.showsLiveMenu { self.refreshLive() }
+            // Check right away when alerts are switched on, rather than after the first interval.
+            let enabled = self.preferences.alertsEnabled
+            if enabled && !self.alertsWereEnabled { self.checkAlerts(maxAge: 0) } else if !enabled { self.cancelAlerts() }
+            self.alertsWereEnabled = enabled
+        })
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     var isRefreshing: Bool { loading }
+    var showsLiveMenu: Bool { preferences.menuDisplay.isLive }
     func updateMenu() {
-        onSummary?(MenuSummary.make(mode: preferences.menuDisplay, websiteID: preferences.menuWebsiteID, sites: sites, records: records, period: period, stale: stale))
+        onSummary?(MenuSummary.make(mode: preferences.menuDisplay, websiteID: preferences.menuWebsiteID, sites: sites, records: records, period: period, stale: stale, live: liveCounts, liveFailed: !liveFailures.isEmpty))
+    }
+    private var liveCounts: [String: Int] {
+        live.filter { Date().timeIntervalSince($0.value.at) < 300 }.mapValues(\.visitors)
+    }
+    /// Fetches every selected site's live count unless one was attempted within maxAge seconds.
+    func refreshLive(maxAge: TimeInterval = 25) {
+        guard let connection = connection, !sites.isEmpty, !paused, liveTasks.isEmpty,
+              liveAttempt.map({ Date().timeIntervalSince($0) >= maxAge }) ?? true else { return }
+        let token = UUID(); liveToken = token; liveAttempt = Date()
+        for site in sites {
+            let task = api.get(Active.self, connection: connection, path: "websites/\(site.id)/active") { [weak self] result in
+                guard let self = self, self.liveToken == token else { return }
+                switch result {
+                case .success(let active): self.live[site.id] = (active.visitors, Date()); self.liveFailures.remove(site.id)
+                case .failure(let error):
+                    self.live[site.id] = nil; self.liveFailures.insert(site.id)
+                    if (error as? ServiceError)?.pausesRefresh == true { self.paused = true }
+                }
+                self.liveTasks.removeAll { $0.state == .completed || $0.state == .canceling }
+                self.publish()
+            }
+            liveTasks.append(task)
+        }
+    }
+    /// Checks every selected site for traffic alerts unless a check started within maxAge seconds.
+    /// Failed requests change nothing: an outage is not reported as a drop to zero.
+    func checkAlerts(maxAge: TimeInterval = 15 * 60) {
+        guard preferences.alertsEnabled, let connection = connection, !sites.isEmpty, !paused, alertTasks.isEmpty,
+              alertAttempt.map({ Date().timeIntervalSince($0) >= maxAge }) ?? true else { return }
+        let token = UUID(); alertToken = token; alertAttempt = Date()
+        let window = TrafficAlert.window(before: Date())
+        let query = [URLQueryItem(name: "startAt", value: String(Int(window.start.timeIntervalSince1970 * 1000))),
+                     URLQueryItem(name: "endAt", value: String(Int(window.end.timeIntervalSince1970 * 1000))),
+                     URLQueryItem(name: "unit", value: "hour"), URLQueryItem(name: "timezone", value: TimeZone.current.identifier)]
+        alerts.keep(sites.map(\.id))
+        for site in sites {
+            let task = api.get(Series.self, connection: connection, path: "websites/\(site.id)/pageviews", query: query) { [weak self] result in
+                guard let self = self, self.alertToken == token else { return }
+                self.alertTasks.removeAll { $0.state == .completed || $0.state == .canceling }
+                guard case .success(let series) = result, self.preferences.alertsEnabled,
+                      let hours = try? TimeBuckets.expand(series.sessions, start: window.start, end: window.end, component: .hour, wallClockLabels: true) else { return }
+                for finding in self.alerts.update(websiteID: site.id, findings: TrafficAlert.evaluate(hours.map(\.y))) {
+                    AlertNotifier.post(finding.kind, website: site, finding: finding)
+                }
+            }
+            alertTasks.append(task)
+        }
+    }
+    private func cancelAlerts() {
+        alertToken = UUID(); alertTasks.forEach { $0.cancel() }; alertTasks = []; alertAttempt = nil
+    }
+    /// Opens a site's detail page, e.g. from a clicked notification.
+    func openDetail(_ id: String) {
+        if screen == "detail" && detailID == id { return }
+        handle("detail", body: ["id": id])
+    }
+    private func cancelLive() {
+        liveToken = UUID(); liveTasks.forEach { $0.cancel() }; liveTasks = []; liveAttempt = nil
     }
     private func sortSites() {
         guard let base = connection?.base else { return }
@@ -177,22 +280,24 @@ final class MainController: NSViewController {
         case "back": detailTask?.cancel(); detailToken = UUID(); detailID = nil; screen = sites.isEmpty ? "empty" : "overview"; publish(); refreshIfNeeded()
         case "detail":
             guard let id = body["id"] as? String, sites.contains(where: { $0.id == id }) else { return }
-            detailID = id; screen = "detail"; breakdown = "pages"; dimension = .pages; detailRows = nil; publish(); loadBreakdown()
+            detailID = id; screen = "detail"; breakdown = "pages"; dimension = .pages; detailRows = nil; detailExpanded = false; publish(); loadBreakdown()
         case "breakdown":
-            guard let value = body["value"] as? String, ["pages", "sources", "utm", "location"].contains(value) else { return }
-            breakdown = value; dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : .pages
+            guard let value = body["value"] as? String, ["pages", "sources", "utm", "location", "events"].contains(value) else { return }
+            detailExpanded = false
+            breakdown = value; dimension = value == "utm" ? utmDimension : value == "location" ? locationDimension : value == "sources" ? .sources : value == "events" ? .events : .pages
             loadBreakdown()
         case "dimension":
             guard let raw = body["value"] as? String, let value = DetailDimension(rawValue: raw), value.category == breakdown else { return }
-            dimension = value
+            dimension = value; detailExpanded = false
             if breakdown == "utm" { utmDimension = value }; if breakdown == "location" { locationDimension = value }
             loadBreakdown()
         case "detailRetry": loadBreakdown()
-        case "refresh": refresh()
+        case "toggleRows": detailExpanded.toggle(); publish()
+        case "refresh": refresh(); refreshLive(maxAge: 0)
         case "period":
             guard let raw = body["value"] as? Int, let value = Period(rawValue: raw), value != period else { return }
             memory[period.rawValue] = records; cancel(); period = value; preferences.defaults.set(raw, forKey: "period")
-            detailRows = nil; errors = [:]; lastAttempt = nil; paused = false; restore(); publish(); refresh()
+            detailRows = nil; detailExpanded = false; errors = [:]; lastAttempt = nil; paused = false; restore(); publish(); refresh()
         case "dashboard":
             if let id = body["id"] as? String, let site = sites.first(where: { $0.id == id }), let url = connection?.dashboard(site) { NSWorkspace.shared.open(url) }
         case "quit": NSApp.terminate(nil)
@@ -225,8 +330,11 @@ final class MainController: NSViewController {
         _ = preferences.reconcileMenuSource(selected: sites.map(\.id))
         if changedConnection {
             cancel(); records = [:]; memory = [:]; stale = []; errors = [:]; lastAttempt = nil; paused = false
+            cancelLive(); live = [:]; liveFailures = []
+            cancelAlerts(); alerts.keep([])
         } else {
             records = records.filter { id, _ in sites.contains { $0.id == id } }
+            live = live.filter { id, _ in sites.contains { $0.id == id } }; liveFailures = liveFailures.filter { id in sites.contains { $0.id == id } }
             if preferences.retainData {
                 let restored = snapshots.records(base: proposed.base, period: period)
                 for id in sites.map(\.id) where records[id] == nil { if let record = restored[id] { records[id] = record; stale.insert(id) } }
@@ -235,7 +343,7 @@ final class MainController: NSViewController {
         if let id = detailID, !sites.contains(where: { $0.id == id }) { detailTask?.cancel(); detailToken = UUID(); detailID = nil }
         screen = sites.isEmpty ? "empty" : detailID == nil ? "overview" : "detail"
         publish()
-        if changedConnection || oldIDs != Set(sites.map(\.id)) { cancel(); paused = false; refresh() }
+        if changedConnection || oldIDs != Set(sites.map(\.id)) { cancel(); paused = false; refresh(); cancelLive(); refreshLive(); cancelAlerts(); checkAlerts() }
     }
     private func publish() {
         updateMenu()
@@ -247,11 +355,12 @@ final class MainController: NSViewController {
         else if !errors.isEmpty { updated = L("更新失败 · 保留上次数据") }
         else { updated = latest.map { L("%@ 已刷新", Formats.time.string(from: $0)) } ?? L("等待更新") }
         let layout = connection.map { preferences.layout(for: $0.base, available: sites.map(\.id)) } ?? WebsiteLayout()
+        let liveNow = liveCounts
         let displayedEnd = detailID.flatMap { records[$0]?.end } ?? (Set(records.values.map(\.end)).count == 1 ? records.values.first?.end ?? end : end)
         let state = PanelState(screen: screen, loading: loading, period: period, start: period.start(before: displayedEnd), end: displayedEnd, updated: updated, sites: sites.map { site in
             let value = records[site.id]
-            return PanelSite(website: site, total: value?.stats.visitors, points: value?.points, error: errors[site.id], stats: value?.stats, previousVisitors: value?.previousVisitors, color: colors[site.id] ?? 0, pinned: layout.pinned.contains(site.id), rangeStart: value?.start, rangeEnd: value?.end, savedAt: value?.savedAt, cached: stale.contains(site.id) && value != nil)
-        }, detailID: detailID, breakdown: breakdown, dimension: dimension, rows: detailRows, detailLoading: detailLoading, detailError: detailError, hasConnection: connection != nil, hasCachedData: hasStale)
+            return PanelSite(website: site, total: value?.stats.visitors, points: value?.points, error: errors[site.id], stats: value?.stats, previousVisitors: value?.previousVisitors, color: colors[site.id] ?? 0, pinned: layout.pinned.contains(site.id), rangeStart: value?.start, rangeEnd: value?.end, savedAt: value?.savedAt, cached: stale.contains(site.id) && value != nil, live: liveNow[site.id], liveFailed: liveFailures.contains(site.id))
+        }, detailID: detailID, breakdown: breakdown, dimension: dimension, rows: detailRows, detailExpanded: detailExpanded, detailLoading: detailLoading, detailError: detailError, hasConnection: connection != nil, hasCachedData: hasStale)
         preferredContentSize = NSSize(width: 360, height: min(screen == "empty" ? 206 : 640, (NSScreen.main?.visibleFrame.height ?? 760) - 60))
         panel.render(state)
     }
@@ -294,9 +403,8 @@ final class MainController: NSViewController {
                         case .success(let series):
                             do {
                                 let points = try TimeBuckets.expand(series.sessions, period: requestedPeriod, end: queryEnd, wallClockLabels: true)
-                                let start = requestedPeriod.start(before: queryEnd), previousEnd = start.addingTimeInterval(-0.001)
-                                let previousStart = start.addingTimeInterval(-queryEnd.timeIntervalSince(start))
-                                let previousQuery = [URLQueryItem(name: "startAt", value: String(Int(previousStart.timeIntervalSince1970 * 1000))), URLQueryItem(name: "endAt", value: String(Int(previousEnd.timeIntervalSince1970 * 1000)))]
+                                let start = requestedPeriod.start(before: queryEnd), previousWindow = requestedPeriod.previous(before: queryEnd)
+                                let previousQuery = [URLQueryItem(name: "startAt", value: String(Int(previousWindow.start.timeIntervalSince1970 * 1000))), URLQueryItem(name: "endAt", value: String(Int(previousWindow.end.timeIntervalSince1970 * 1000)))]
                                 let previous = self.api.get(Stats.self, connection: connection, path: path + "/stats", query: previousQuery) { result in
                                     guard self.generation == token else { return }
                                     var previousVisitors: Int?
@@ -325,14 +433,15 @@ final class MainController: NSViewController {
         let restored = preferences.retainData ? snapshots.detail(base: connection.base, websiteID: id, period: period, dimension: dimension, end: detailEnd) : nil
         detailRows = restored; detailError = nil; detailLoading = restored == nil; publish()
         let requestedPeriod = period, requestedDimension = dimension
-        let query = period.query(end: detailEnd) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: "5")]
+        let limit = dimension.fetchLimit
+        let query = period.query(end: detailEnd) + [URLQueryItem(name: "type", value: dimension.rawValue), URLQueryItem(name: "limit", value: String(limit))]
         detailTask = api.get([MetricRow].self, connection: connection, path: "websites/\(id)/metrics", query: query) { [weak self] result in
             guard let self = self, self.detailToken == token, self.detailID == id, self.screen == "detail" else { return }
             self.detailLoading = false
             switch result {
             case .success(let rows):
-                self.detailRows = Array(rows.sorted { $0.y > $1.y }.prefix(5))
-                if self.preferences.retainData { try? self.snapshots.saveDetail(DetailSnapshot(websiteID: id, period: requestedPeriod.rawValue, dimension: requestedDimension.rawValue, end: detailEnd, rows: self.detailRows!), base: connection.base) }
+                self.detailRows = Array(rows.sorted { $0.y > $1.y }.prefix(limit))
+                if self.preferences.retainData { try? self.snapshots.saveDetail(DetailSnapshot(websiteID: id, period: requestedPeriod.rawValue, dimension: requestedDimension.rawValue, end: detailEnd, rows: self.detailRows!, limit: limit), base: connection.base) }
             case .failure(let error):
                 self.detailError = error.localizedDescription
                 // Keep a matching successful breakdown visible on offline refreshes.
@@ -345,6 +454,7 @@ final class MainController: NSViewController {
 
 
 private final class CacheIndicator: NSView {
+    var live = false { didSet { needsDisplay = true } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func draw(_ dirtyRect: NSRect) { NSColor.systemOrange.setFill(); NSBezierPath(ovalIn: bounds).fill() }
+    override func draw(_ dirtyRect: NSRect) { (live ? NSColor.systemGreen : NSColor.systemOrange).setFill(); NSBezierPath(ovalIn: bounds).fill() }
 }

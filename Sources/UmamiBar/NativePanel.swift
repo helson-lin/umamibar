@@ -1,11 +1,11 @@
 import AppKit
 
-struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil; var color = 0; var pinned = false; var rangeStart: Date? = nil; var rangeEnd: Date? = nil; var savedAt: Date? = nil; var cached = false }
+struct PanelSite { let website: Website; let total: Int?; let points: [Point]?; let error: String?; var stats: Stats? = nil; var previousVisitors: Int? = nil; var color = 0; var pinned = false; var rangeStart: Date? = nil; var rangeEnd: Date? = nil; var savedAt: Date? = nil; var cached = false; var live: Int? = nil; var liveFailed = false }
 struct PanelState {
     var screen: String; var loading: Bool
     var period: Period; var start: Date; var end: Date; var updated: String
     var sites: [PanelSite]
-    var detailID: String? = nil; var breakdown = "pages"; var dimension: DetailDimension = .pages; var rows: [MetricRow]? = nil
+    var detailID: String? = nil; var breakdown = "pages"; var dimension: DetailDimension = .pages; var rows: [MetricRow]? = nil; var detailExpanded = false
     var detailLoading = false; var detailError: String? = nil
     var hasConnection = false; var hasCachedData = false
 }
@@ -29,6 +29,15 @@ final class NativePanel: FlippedView {
         if state?.screen == "detail" { action("back") } else { nextResponder?.tryToPerform(#selector(cancelOperation(_:)), with: sender) }
     }
     private func action(_ name: String, _ values: [String: Any] = [:]) { onAction?(name, values) }
+    /// Range segments in display order; Today's short label takes a narrower segment so "Last 24 hours" still fits.
+    private static let periodSegments: [(Period, NSRect)] = {
+        var x: CGFloat = 23
+        return Period.displayOrder.map { p in
+            let width: CGFloat = p == .today ? 56 : 85
+            defer { x += width + 1 }
+            return (p, NSRect(x: x, y: 79, width: width, height: 29))
+        }
+    }()
     private func button(_ title: String, _ rect: NSRect, style: PaintedButton.Style = .plain, action: @escaping () -> Void) -> PaintedButton {
         let b = PaintedButton(title, frame: rect, style: style, action: action); addSubview(b); return b
     }
@@ -62,8 +71,8 @@ final class NativePanel: FlippedView {
             let back = button("‹", NSRect(x: 20, y: 20, width: 29, height: 29), style: .navigation) { [weak self] in self?.action("back") }
             back.setAccessibilityLabel(L("返回网站概览")); back.toolTip = L("返回网站概览")
             _ = button("↗", NSRect(x: 310, y: 20, width: 29, height: 29), style: .navigation) { [weak self] in self?.action("dashboard", ["id": selected.website.id]) }
-            for p in Period.allCases {
-                let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period
+            for (p, rect) in Self.periodSegments {
+                let b = button(p.title, rect, style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period
             }
             let frame = NSRect(x: 0, y: 145, width: bounds.width, height: max(40, bounds.height - 185))
             if reuseDetail, let scroll = detailScroll, let body = scroll.documentView as? DetailBody {
@@ -71,10 +80,11 @@ final class NativePanel: FlippedView {
             } else {
                 let scroll = NSScrollView(frame: frame)
                 scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .overlay
-                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: 610), site: selected, state: next)
+                let body = DetailBody(frame: NSRect(x: 0, y: 0, width: 360, height: DetailBody.rowsLayout(next).height), site: selected, state: next)
                 body.onBreakdown = { [weak self] value in self?.action("breakdown", ["value": value]) }
                 body.onDimension = { [weak self] value in self?.action("dimension", ["value": value.rawValue]) }
                 body.onRetry = { [weak self] in self?.action("detailRetry") }
+                body.onToggleRows = { [weak self] in self?.action("toggleRows") }
                 scroll.documentView = body; addSubview(scroll); detailScroll = scroll
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: min(detailOffset.y, max(0, body.bounds.height-scroll.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
             }
@@ -89,8 +99,8 @@ final class NativePanel: FlippedView {
                 addSubview(spinner); spinner.startAnimation(nil)
             }
             let settings = button(L("连接设置"), NSRect(x: 301, y: 22, width: 30, height: 30), style: .icon) { [weak self] in self?.action("settings") }; settings.toolTip = L("连接与网站设置")
-            for p in Period.allCases {
-                let b = button(p.title, NSRect(x: 23 + CGFloat(p.rawValue) * 105, y: 79, width: 104, height: 29), style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
+            for (p, rect) in Self.periodSegments {
+                let b = button(p.title, rect, style: .segment) { [weak self] in self?.action("period", ["value": p.rawValue]) }; b.selected = p == next.period; b.setAccessibilityValue(b.selected ? L("已选中") : L("未选中"))
             }
             let frame = NSRect(x: 0, y: 135, width: bounds.width, height: max(40, bounds.height - 175))
             if reuseOverview, let scroll = overviewScroll, let document = scroll.documentView {
@@ -156,14 +166,37 @@ final class NativePanel: FlippedView {
         }
     }
 }
-private func drawGrowth(_ site: PanelSite, rect: NSRect) {
-    let change = Stats.change(current: site.total, previous: site.previousVisitors)
+private func drawGrowth(_ site: PanelSite, period: Period, rect: NSRect) {
+    let change = Stats.change(current: site.total, previous: site.previousVisitors, period: period)
     // Color from the numbers, not the localized text: green for growth, orange for a decline or a new site.
     var color = Ink.secondary
     if let current = site.total, let previous = site.previousVisitors {
         if previous > 0 && current > previous { color = Ink.green } else if current < previous || (previous == 0 && current > 0) { color = NSColor.systemOrange }
     }
     text(change, rect, size: 9, color: color, alignment: .right)
+}
+/// The live marker: a filled dot that breathes while anyone is online, a hollow ring at zero, hidden when unknown.
+final class LiveDot: NSView {
+    var count: Int? { didSet { if count != oldValue { restyle() } } }
+    override init(frame: NSRect) { super.init(frame: frame); wantsLayer = true; restyle() }
+    required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); restyle() }
+    private func restyle() {
+        guard let layer = layer else { return }
+        isHidden = count == nil
+        let previous = NSAppearance.current; NSAppearance.current = effectiveAppearance; defer { NSAppearance.current = previous }
+        let active = (count ?? 0) > 0
+        layer.cornerRadius = bounds.width / 2
+        layer.backgroundColor = active ? Ink.green.cgColor : NSColor.clear.cgColor
+        layer.borderWidth = active ? 0 : 1; layer.borderColor = Ink.secondary.cgColor
+        layer.removeAnimation(forKey: "breathe")
+        guard active, !Motion.reduced else { return }
+        let breathe = CABasicAnimation(keyPath: "opacity")
+        breathe.fromValue = 1; breathe.toValue = 0.35; breathe.duration = 1.2; breathe.autoreverses = true; breathe.repeatCount = .infinity
+        breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(breathe, forKey: "breathe")
+    }
 }
 private func drawStats(_ stats: Stats?, y: CGFloat) {
     let fields = [(L("浏览量"), stats?.pageviews.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"), (L("跳出率"), stats?.bounceText ?? "—"), (L("平均时长"), stats?.durationText ?? "—")]
@@ -177,6 +210,7 @@ private func drawStats(_ stats: Stats?, y: CGFloat) {
 final class SiteCard: FlippedView {
     private var site: PanelSite; private let index: Int; private var state: PanelState
     private let chart = ChartView(frame: NSRect(x: 20, y: 74, width: 320, height: 65))
+    private let liveDot = LiveDot(frame: NSRect(x: 0, y: 22, width: 5, height: 5))
     var open: (() -> Void)?
     /// Cards can be updated in place only while the website and card height stay the same.
     static func layoutKey(_ site: PanelSite) -> String { site.website.id + (site.error == nil ? "" : "#error") + (site.cached ? "#cached" : "") + (site.pinned ? "#pinned" : "") }
@@ -187,19 +221,35 @@ final class SiteCard: FlippedView {
         let openButton = PaintedButton("", frame: NSRect(x: 9, y: 9, width: 240, height: 48)) { [weak self] in self?.open?() }; openButton.toolTip = L("查看 %@ 详情", site.website.name); openButton.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(openButton)
         chart.points = site.points ?? []; chart.colorIndex = site.color; chart.showsScale = false
         chart.onClick = { [weak self] in self?.open?() }; chart.setAccessibilityLabel(L("查看 %@ 详情", site.website.name)); addSubview(chart)
+        addSubview(liveDot); placeLiveDot()
     }
-    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; needsDisplay = true }
+    func update(site: PanelSite, state: PanelState) { self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; placeLiveDot(); needsDisplay = true }
+    /// The live count follows the name ("Fanbar ● 7"); a long name truncates so the count always stays visible.
+    private var nameLayout: (x: CGFloat, width: CGFloat, liveX: CGFloat) {
+        let x: CGFloat = site.pinned ? 35 : 20, room = 238 - x
+        let liveWidth = ceil(liveCount.size().width) + (site.live == nil ? 0 : 9) + 7
+        let name = NSAttributedString(string: site.website.name, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)])
+        let width = min(ceil(name.size().width) + 1, room - liveWidth)
+        return (x, width, x + width + 7)
+    }
+    private var liveCount: NSAttributedString {
+        let value = site.live.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"
+        return NSAttributedString(string: value, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium), .foregroundColor: (site.live ?? 0) > 0 ? Ink.green : Ink.secondary])
+    }
+    private func placeLiveDot() { liveDot.frame.origin.x = nameLayout.liveX; liveDot.count = site.live }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
         if index > 0 { fill(NSRect(x: 20, y: 0, width: 320, height: 0.5), Ink.line) }
         if site.pinned { drawPin(in: NSRect(x: 20, y: 20, width: 10, height: 11), color: Ink.secondary) }
-        text(site.website.name, NSRect(x: site.pinned ? 35 : 20, y: 17, width: site.pinned ? 203 : 218, height: 17), size: 12, weight: .medium)
+        let layout = nameLayout
+        text(site.website.name, NSRect(x: layout.x, y: 17, width: layout.width, height: 17), size: 12, weight: .medium)
+        liveCount.draw(at: NSPoint(x: layout.liveX + (site.live == nil ? 0 : 9), y: 19))
         text(site.website.domain, NSRect(x: 20, y: 36, width: 218, height: 16), size: 10, color: Ink.secondary)
         let count = site.total.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—"
         let line = NSMutableAttributedString(string: count, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .medium), .foregroundColor: Ink.text])
         line.append(NSAttributedString(string: " " + L("访客"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
         line.draw(at: NSPoint(x: bounds.width - 20 - line.size().width, y: 17))
-        drawGrowth(site, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
+        drawGrowth(site, period: state.period, rect: NSRect(x: 180, y: 51, width: 160, height: 15))
         do {
             if site.points == nil { text(state.loading ? L("正在加载…") : site.error != nil && site.total == nil ? L("该范围暂无已保存数据") : L("趋势暂无数据"), NSRect(x: 20, y: 94, width: 320, height: 18), color: Ink.secondary, alignment: .center) }
             let formatter = Formats.axis(state.period)
@@ -216,24 +266,41 @@ final class SiteCard: FlippedView {
 }
 final class DetailBody: FlippedView {
     private(set) var site: PanelSite; private(set) var state: PanelState
-    private let chart = ChartView(frame: NSRect(x: 20, y: 181, width: 320, height: 90))
+    private let chart = ChartView(frame: NSRect(x: 20, y: 215, width: 320, height: 90))
+    private let liveDot = LiveDot(frame: NSRect(x: 20, y: 18, width: 6, height: 6))
     var onBreakdown: ((String) -> Void)?
     var onDimension: ((DetailDimension) -> Void)?
     var onRetry: (() -> Void)?
+    var onToggleRows: (() -> Void)?
+    /// Breakdown rows start at `top`; the toggle sits under the visible rows and the footnote under that.
+    /// The footnote keeps its old place when there is nothing to expand.
+    static func rowsLayout(_ state: PanelState) -> (top: CGFloat, visible: Int, toggle: NSRect?, footnote: CGFloat, height: CGFloat) {
+        let top: CGFloat = 405 + (state.breakdown == "utm" || state.breakdown == "location" ? 44 : 0)
+        let rows = state.detailLoading || state.detailError != nil ? [] : state.rows ?? []
+        let visible = state.detailExpanded ? rows.count : min(5, rows.count)
+        var toggle: NSRect?, footnote = top + 5 * 32 + 4
+        if rows.count > 5 {
+            let rect = NSRect(x: 20, y: top + CGFloat(visible) * 32 + 2, width: 320, height: 28)
+            toggle = rect; footnote = rect.maxY + 10
+        }
+        return (top, visible, toggle, footnote, max(644, footnote + 31))
+    }
     init(frame: NSRect, site: PanelSite, state: PanelState) {
         self.site = site; self.state = state; super.init(frame: frame)
-        chart.colorIndex = site.color; chart.points = site.points ?? []; addSubview(chart); addControls()
+        chart.colorIndex = site.color; chart.points = site.points ?? []; addSubview(chart); addSubview(liveDot); placeLiveDot(); addControls()
     }
+    private func placeLiveDot() { liveDot.count = site.live }
     func update(site: PanelSite, state: PanelState) {
-        self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []
-        subviews.filter { $0 !== chart }.forEach { $0.removeFromSuperview() }; addControls(); needsDisplay = true
+        self.site = site; self.state = state; chart.colorIndex = site.color; chart.points = site.points ?? []; placeLiveDot()
+        subviews.filter { $0 !== chart && $0 !== liveDot }.forEach { $0.removeFromSuperview() }; addControls()
+        frame.size.height = Self.rowsLayout(state).height; needsDisplay = true
     }
     private func addControls() {
-        for (i, value) in ["pages", "sources", "utm", "location"].enumerated() {
-            let b = PaintedButton([L("热门页面"), L("流量来源"), "UTM", L("位置")][i], frame: NSRect(x: 16+CGFloat(i)*82, y: 301, width: 80, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
+        for (i, value) in ["pages", "sources", "utm", "location", "events"].enumerated() {
+            let b = PaintedButton([L("热门页面"), L("流量来源"), "UTM", L("位置"), L("事件")][i], frame: NSRect(x: 16+CGFloat(i)*66, y: 335, width: 64, height: 30), style: .segment) { [weak self] in self?.onBreakdown?(value) }; b.selected = state.breakdown == value; addSubview(b)
         }
         if state.breakdown == "utm" || state.breakdown == "location" {
-            let popup = NSPopUpButton(frame: NSRect(x: 112, y: 344, width: 228, height: 26), pullsDown: false)
+            let popup = NSPopUpButton(frame: NSRect(x: 112, y: 378, width: 228, height: 26), pullsDown: false)
             for option in DetailDimension.options(for: state.breakdown) {
                 popup.addItem(withTitle: option.title)
                 popup.lastItem?.representedObject = option.rawValue
@@ -244,8 +311,12 @@ final class DetailBody: FlippedView {
             popup.setAccessibilityLabel(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"))
             addSubview(popup)
         }
+        if let rect = Self.rowsLayout(state).toggle, let count = state.rows?.count {
+            let toggle = PaintedButton(state.detailExpanded ? L("收起") : L("显示全部 %ld 项", count), frame: rect) { [weak self] in self?.onToggleRows?() }
+            toggle.setAccessibilityValue(state.detailExpanded ? L("已展开") : L("已收起")); addSubview(toggle)
+        }
         if state.detailError != nil {
-            let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 445, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
+            let retry = PaintedButton(L("重新加载"), frame: NSRect(x: 122, y: 479, width: 116, height: 30), style: .secondary) { [weak self] in self?.onRetry?() }; addSubview(retry)
         }
     }
     @objc private func dimensionChanged(_ sender: NSPopUpButton) {
@@ -254,33 +325,47 @@ final class DetailBody: FlippedView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func draw(_ dirtyRect: NSRect) {
-        text(L("访客数"), NSRect(x: 20, y: 20, width: 120, height: 16), size: 10, color: Ink.secondary)
-        text(site.total.map(String.init) ?? "—", NSRect(x: 20, y: 40, width: 190, height: 43), size: 34, weight: .medium)
-        drawGrowth(site, rect: NSRect(x: 185, y: 65, width: 155, height: 16))
-        drawStats(site.stats, y: 100)
-        fill(NSRect(x: 20, y: 148, width: 320, height: 0.5), Ink.line)
-        text(L("会话趋势"), NSRect(x: 20, y: 161, width: 160, height: 17), weight: .semibold)
-        text(state.period == .day ? L("每小时") : L("每天"), NSRect(x: 265, y: 161, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
-        if site.points == nil { text(L("趋势暂无数据"), NSRect(x: 90, y: 214, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
+        text(L("访客数"), NSRect(x: 20, y: 54, width: 120, height: 16), size: 10, color: Ink.secondary)
+        text(site.total.map(String.init) ?? "—", NSRect(x: 20, y: 74, width: 190, height: 43), size: 34, weight: .medium)
+        // The live strip stands apart from the period stats: it always describes the last 5 minutes.
+        let live = NSMutableAttributedString(string: L("当前在线") + " ", attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary])
+        live.append(NSAttributedString(string: site.live.map { NumberFormatter.localizedString(from: NSNumber(value: $0), number: .decimal) } ?? "—", attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium), .foregroundColor: (site.live ?? 0) > 0 ? Ink.green : Ink.text]))
+        live.append(NSAttributedString(string: " " + L("人"), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Ink.secondary]))
+        live.draw(at: NSPoint(x: site.live == nil ? 20 : 32, y: 13))
+        // Offline data never carries a live count, so explain the dash before blaming the request.
+        let hint = site.live != nil ? L("最近 5 分钟 · 30 秒刷新") : site.cached ? L("离线时不显示实时数据") : site.liveFailed ? L("实时数据获取失败") : L("正在获取…")
+        text(hint, NSRect(x: 160, y: 15, width: 180, height: 13), size: 9, color: site.live == nil && !site.cached && site.liveFailed ? .systemOrange : Ink.secondary, alignment: .right)
+        fill(NSRect(x: 20, y: 38, width: 320, height: 0.5), Ink.line)
+        drawGrowth(site, period: state.period, rect: NSRect(x: 185, y: 99, width: 155, height: 16))
+        drawStats(site.stats, y: 134)
+        fill(NSRect(x: 20, y: 182, width: 320, height: 0.5), Ink.line)
+        text(L("会话趋势"), NSRect(x: 20, y: 195, width: 160, height: 17), weight: .semibold)
+        text(state.period.hourly ? L("每小时") : L("每天"), NSRect(x: 265, y: 195, width: 75, height: 17), size: 9, color: Ink.secondary, alignment: .right)
+        if site.points == nil { text(L("趋势暂无数据"), NSRect(x: 90, y: 248, width: 180, height: 16), color: Ink.secondary, alignment: .center) }
         let formatter = Formats.axis(state.period)
-        text(formatter.string(from: state.start), NSRect(x: 20, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary)
-        text(formatter.string(from: state.end), NSRect(x: 240, y: 279, width: 100, height: 14), size: 9, color: Ink.secondary, alignment: .right)
-        fill(NSRect(x: 20, y: 335, width: 320, height: 0.5), Ink.line)
+        text(formatter.string(from: state.start), NSRect(x: 20, y: 313, width: 100, height: 14), size: 9, color: Ink.secondary)
+        text(formatter.string(from: state.end), NSRect(x: 240, y: 313, width: 100, height: 14), size: 9, color: Ink.secondary, alignment: .right)
+        fill(NSRect(x: 20, y: 369, width: 320, height: 0.5), Ink.line)
         let offset: CGFloat = state.breakdown == "utm" || state.breakdown == "location" ? 44 : 0
-        if offset > 0 { text(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"), NSRect(x: 20, y: 351, width: 88, height: 16), size: 10, color: Ink.secondary) }
-        text(state.dimension.title, NSRect(x: 20, y: 348+offset, width: 160, height: 15), size: 9, color: Ink.secondary)
-        text(L("次数 / 前5项占比"), NSRect(x: 210, y: 348+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
-        if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        else if let error = state.detailError { text(error, NSRect(x: 20, y: 377+offset, width: 320, height: 24), size: 10, color: .systemOrange) }
+        if offset > 0 { text(state.breakdown == "utm" ? L("UTM 字段") : L("位置维度"), NSRect(x: 20, y: 385, width: 88, height: 16), size: 10, color: Ink.secondary) }
+        text(state.dimension.title, NSRect(x: 20, y: 382+offset, width: 160, height: 15), size: 9, color: Ink.secondary)
+        text(L("次数 / 占比"), NSRect(x: 210, y: 382+offset, width: 130, height: 15), size: 9, color: Ink.secondary, alignment: .right)
+        if state.detailLoading { text(L("正在加载…"), NSRect(x: 20, y: 417+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        else if let error = state.detailError { text(error, NSRect(x: 20, y: 411+offset, width: 320, height: 24), size: 10, color: .systemOrange) }
         else if let rows = state.rows, !rows.isEmpty {
-            let sum = rows.reduce(0) { $0 + $1.y }
-            for (i,row) in rows.prefix(5).enumerated() {
-                let y = CGFloat(371+i*32)+offset; let ratio = sum > 0 ? row.y/sum : 0
+            // Shares are of every loaded row, not only the visible ones.
+            let sum = rows.reduce(0) { $0 + $1.y }, layout = Self.rowsLayout(state)
+            for (i,row) in rows.prefix(layout.visible).enumerated() {
+                let y = layout.top + CGFloat(i*32); let ratio = sum > 0 ? row.y/sum : 0
                 fill(NSRect(x: 20, y: y, width: 320*ratio, height: 29), Palette.swatch(site.color).base.withAlphaComponent(0.09), radius: 4)
                 text(state.dimension.label(for: row.x), NSRect(x: 28, y: y+8, width: 205, height: 15), size: 10)
                 text("\(Int(row.y))   \(Int((ratio*100).rounded()))%", NSRect(x: 235, y: y+8, width: 97, height: 15), size: 10, alignment: .right)
             }
-        } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 383+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
-        text(state.breakdown == "utm" ? L("未携带字段显示「未设置」· 占比按前 5 项计算") : state.breakdown == "location" ? L("缺失位置显示「未知位置」· 占比按前 5 项计算") : L("仅展示前 5 项 · 占比按当前返回的前 5 项计算"), NSRect(x: 20, y: 535+offset, width: 320, height: 17), size: 9, color: Ink.secondary)
+        } else { text(L("该时段暂无数据"), NSRect(x: 20, y: 417+offset, width: 320, height: 20), color: Ink.secondary, alignment: .center) }
+        // Fewer rows than requested means the list is complete; otherwise shares cover only the loaded rows.
+        let loaded = state.rows?.count ?? 0
+        let scope = loaded < state.dimension.fetchLimit ? L("占比按全部 %ld 项计算", loaded) : L("占比按前 %ld 项计算", loaded)
+        let missing = state.breakdown == "utm" ? L("未携带字段显示「未设置」") : state.breakdown == "location" ? L("缺失位置显示「未知位置」") : nil
+        text(missing.map { $0 + " · " + scope } ?? scope, NSRect(x: 20, y: Self.rowsLayout(state).footnote, width: 320, height: 17), size: 9, color: Ink.secondary)
     }
 }

@@ -67,6 +67,27 @@ final class PreferencesTests: XCTestCase {
         XCTAssertTrue(single.tooltip.contains("Alpha"))
         XCTAssertTrue(single.tooltip.contains("本地数据"))
     }
+    func testLiveMenuSumsOnlyCompleteCounts() throws {
+        let pair = Array(sites.prefix(2))
+        let total = MenuSummary.make(mode: .live, websiteID: nil, sites: pair, records: [:], period: .day, stale: [], live: ["a": 3, "b": 4])
+        XCTAssertEqual(total.count, 7); XCTAssertEqual(total.title, " 7"); XCTAssertTrue(total.live); XCTAssertFalse(total.cached)
+        XCTAssertTrue(total.tooltip.contains(L("最近 5 分钟内的访客")))
+        let partial = MenuSummary.make(mode: .live, websiteID: nil, sites: pair, records: [:], period: .day, stale: [], live: ["a": 3], liveFailed: true)
+        XCTAssertNil(partial.count); XCTAssertEqual(partial.title, " —"); XCTAssertFalse(partial.live)
+        XCTAssertTrue(partial.tooltip.contains(L("实时数据获取失败，下次刷新将重试")))
+        let zero = MenuSummary.make(mode: .websiteLive, websiteID: "b", sites: sites, records: [:], period: .day, stale: [], live: ["a": 3, "b": 0])
+        XCTAssertEqual(zero.title, " 0"); XCTAssertTrue(zero.live); XCTAssertTrue(zero.tooltip.contains(sites[1].name))
+        // Saved visitor snapshots never stand in for a live count.
+        let a = try snapshot("a")
+        XCTAssertNil(MenuSummary.make(mode: .websiteLive, websiteID: "a", sites: sites, records: ["a": a], period: .day, stale: ["a"]).count)
+    }
+    func testLiveWebsiteSourceFallsBackLikeVisitorSource() {
+        let prefs = preferences()
+        prefs.menuWebsiteID = "b"; prefs.menuDisplay = .websiteLive
+        XCTAssertFalse(prefs.reconcileMenuSource(selected: ["a", "b"]))
+        XCTAssertTrue(prefs.reconcileMenuSource(selected: ["a"]))
+        XCTAssertEqual(prefs.menuDisplay, .total)
+    }
     func testZeroMissingAndIconRemainDistinct() throws {
         let zero = try snapshot("a", count: 0)
         let values = ["a": zero]
@@ -98,7 +119,10 @@ final class PreferencesTests: XCTestCase {
         let store = SnapshotStore(directory: try directory()), base = URL(string: "https://one.test/api")!
         let value = try snapshot("a")
         try store.save(value, base: base)
-        try store.saveDetail(DetailSnapshot(websiteID: "a", period: 0, dimension: "path", end: value.end, rows: [MetricRow(x: "/", y: 2)]), base: base)
+        // Rows saved before "Show more" (no limit) are top-5 only and must not be restored as complete lists.
+        try store.saveDetail(DetailSnapshot(websiteID: "a", period: 0, dimension: "path", end: value.end, rows: [MetricRow(x: "/", y: 1)]), base: base)
+        XCTAssertNil(store.detail(base: base, websiteID: "a", period: .day, dimension: .pages, end: value.end))
+        try store.saveDetail(DetailSnapshot(websiteID: "a", period: 0, dimension: "path", end: value.end, rows: [MetricRow(x: "/", y: 2)], limit: DetailDimension.pages.fetchLimit), base: base)
         XCTAssertEqual(store.detail(base: base, websiteID: "a", period: .day, dimension: .pages, end: value.end)?.first?.y, 2)
         XCTAssertNil(store.detail(base: base, websiteID: "a", period: .day, dimension: .sources, end: value.end))
         let next = try snapshot("a", end: value.end.addingTimeInterval(60))

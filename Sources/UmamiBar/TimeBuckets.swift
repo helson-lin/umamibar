@@ -4,8 +4,9 @@ import Foundation
 /// calendar-aligned timeline; preserve partial first/last buckets and DST hours.
 enum TimeBuckets {
     static func expand(_ points: [Point], period: Period, end: Date, calendar: Calendar = .current, wallClockLabels: Bool = false) throws -> [Point] {
-        let start = period.start(before: end, calendar: calendar)
-        let component: Calendar.Component = period == .day ? .hour : .day
+        try expand(points, start: period.start(before: end, calendar: calendar), end: end, component: period.hourly ? .hour : .day, calendar: calendar, wallClockLabels: wallClockLabels)
+    }
+    static func expand(_ points: [Point], start: Date, end: Date, component: Calendar.Component, calendar: Calendar = .current, wallClockLabels: Bool = false) throws -> [Point] {
         guard var cursor = calendar.dateInterval(of: component, for: start)?.start else { return [] }
         let iso = ISO8601DateFormatter()
         let local = DateFormatter()

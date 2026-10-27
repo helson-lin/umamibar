@@ -18,7 +18,7 @@ final class SettingsWindowController: NSWindowController {
     private var layout = WebsiteLayout()
     private var generation = UUID(), busy = false, needsConnectionCommit = false
     private var listError: String?, connectionStatus = "", connectionFailed = false, footerStatus = ""
-    private var generalError: String?
+    private var generalError: String?, alertError: String?
     private enum Confirmation { case clear, disable }
     private var confirmation: Confirmation?
     private var showingSavedData = false
@@ -71,7 +71,7 @@ final class SettingsWindowController: NSWindowController {
             generation = UUID(); busy = false
             candidate = nil; available = sites; chosen = Set(sites.map(\.id)); listError = nil; search.stringValue = ""
             server.stringValue = connection?.base.absoluteString ?? "https://api.umami.is/v1"
-            key.stringValue = ""; connectionStatus = ""; connectionFailed = false; generalError = nil
+            key.stringValue = ""; connectionStatus = ""; connectionFailed = false; generalError = nil; alertError = nil
             needsConnectionCommit = false; confirmation = nil; showingSavedData = false; footerStatus = ""
             if let base = connection?.base { layout = preferences.layout(for: base, available: sites.map(\.id)) }
             applyStrings(); window?.center()
@@ -162,9 +162,10 @@ final class SettingsWindowController: NSWindowController {
     }
     @discardableResult
     private func note(_ value: String, at y: CGFloat, in body: NSView) -> CGFloat {
-        let measured = (value as NSString).boundingRect(with: NSSize(width: 376, height: 1000), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: NSFont.systemFont(ofSize: 10)]).height
-        let height = max(18, ceil(measured))
-        settingsLabel(value, in: body, frame: NSRect(x: 32, y: y, width: 376, height: height), size: 10, color: .secondaryLabelColor)
+        let label = settingsLabel(value, in: body, frame: NSRect(x: 32, y: y, width: 376, height: 18), size: 10, color: .secondaryLabelColor)
+        // Measure with the label's own cell: plain string measurement ignores the field's insets and cuts long notes short.
+        let height = max(18, ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 376, height: 1000)).height ?? 18))
+        label.frame.size.height = height
         return height
     }
     private func renderGeneral(in body: FlippedView) {
@@ -188,21 +189,47 @@ final class SettingsWindowController: NSWindowController {
             _ = button(L("登录启动已被系统停用 · 前往系统设置开启 ↗"), NSRect(x: 24, y: y-16, width: 392, height: 28), in: body) { [weak self] in self?.login.openSystemSettings() }; y += 20
         }
         let mode = preferences.menuDisplay
-        let menu = group(L("菜单栏"), rows: mode == .website ? 2 : 1, at: y, in: body)
+        let menu = group(L("菜单栏"), rows: mode.single ? 2 : 1, at: y, in: body)
         rowLabel(L("显示内容"), row: 0, in: menu)
         let popup = ActionPopup(frame: NSRect(x: 210, y: 8, width: 178, height: 28), label: L("显示内容"), choices: MenuDisplay.allCases.map { ($0.rawValue, $0.title) }, selected: mode.rawValue) { [weak self] raw in
             guard let self = self, let mode = MenuDisplay(rawValue: raw) else { return }
-            if mode == .website, !self.chosen.contains(self.preferences.menuWebsiteID ?? "") { self.preferences.menuWebsiteID = self.layout.sorted(self.available.filter { self.chosen.contains($0.id) }).first?.id }
+            if mode.single, !self.chosen.contains(self.preferences.menuWebsiteID ?? "") { self.preferences.menuWebsiteID = self.layout.sorted(self.available.filter { self.chosen.contains($0.id) }).first?.id }
             self.preferences.menuDisplay = mode; self.render()
         }
-        popup.itemArray.first { $0.representedObject as? String == MenuDisplay.website.rawValue }?.isEnabled = !chosen.isEmpty
+        popup.itemArray.filter { MenuDisplay(rawValue: $0.representedObject as? String ?? "")?.single == true }.forEach { $0.isEnabled = !chosen.isEmpty }
         menu.addSubview(popup)
-        if mode == .website {
+        if mode.single {
             rowLabel(L("指定网站"), row: 1, in: menu)
             menu.addSubview(ActionPopup(frame: NSRect(x: 210, y: 52, width: 178, height: 28), label: L("指定网站"), choices: layout.sorted(available.filter { chosen.contains($0.id) }).map { ($0.id, $0.name) }, selected: preferences.menuWebsiteID ?? "") { [weak self] id in self?.preferences.menuWebsiteID = id })
         }
-        let menuNote = mode == .icon ? L("隐藏数字，保留菜单栏入口。") : mode == .website ? L("所选网站 · 跟随概览的时间范围") : L("全部已选网站 · 当前时间范围 · 跨站未去重")
+        let menuNote: String
+        switch mode {
+        case .icon: menuNote = L("隐藏数字，保留菜单栏入口。")
+        case .website: menuNote = L("所选网站 · 跟随概览的时间范围")
+        case .websiteLive: menuNote = L("所选网站 · 最近 5 分钟内的访客 · 每分钟更新")
+        case .live: menuNote = L("全部已选网站 · 最近 5 分钟内的访客 · 每分钟更新 · 跨站未去重")
+        case .total: menuNote = L("全部已选网站 · 当前时间范围 · 跨站未去重")
+        }
         y = menu.frame.maxY + 8; y += note(menuNote, at: y, in: body) + 20
+        let alerts = group(L("流量提醒"), rows: 1, at: y, in: body)
+        rowLabel(L("流量异常时通知"), row: 0, in: alerts)
+        let alertSwitch = ActionSwitch(frame: NSRect(x: 355, y: 12, width: 32, height: 22), label: L("流量异常时通知"), enabled: preferences.alertsEnabled) { [weak self] enabled in
+            guard let self = self else { return }
+            guard enabled else { self.preferences.alertsEnabled = false; self.alertError = nil; self.render(); return }
+            // Only switch on once macOS allows notifications; otherwise say where to allow them.
+            AlertNotifier.requestPermission { granted in
+                self.preferences.alertsEnabled = granted
+                self.alertError = granted ? nil : AlertNotifier.available ? L("通知未获允许。请在“系统设置 › 通知”中允许 UmamiBar。") : L("请从已安装的 UmamiBar.app 开启流量提醒。")
+                self.render()
+            }
+        }
+        alertSwitch.isEnabled = saved != nil; alerts.addSubview(alertSwitch)
+        y = alerts.frame.maxY + 8
+        y += note(L("每 15 分钟检查已关注的网站：最近 3 小时没有访问（平时同一时段有访问），或最近 1 小时会话达到平时的 3 倍且至少 20 次时通知。"), at: y, in: body) + 4
+        if let alertError = alertError {
+            settingsLabel(alertError, in: body, frame: NSRect(x: 32, y: y, width: 376, height: 32), size: 10, color: .systemOrange); y += 34
+        }
+        y += 16
         let data = group(L("本地数据"), rows: 2, at: y, in: body)
         rowLabel(L("保留最近成功数据"), row: 0, in: data)
         data.addSubview(ActionSwitch(frame: NSRect(x: 355, y: 12, width: 32, height: 22), label: L("保留最近成功数据"), enabled: preferences.retainData) { [weak self] enabled in
@@ -219,7 +246,7 @@ final class SettingsWindowController: NSWindowController {
         y = data.frame.maxY + 8
         y += note(L("离线时查看上次结果。仅存于本机，不包含密钥。"), at: y, in: body) + 12
         if showingSavedData {
-            for period in Period.allCases {
+            for period in Period.displayOrder {
                 let values = stored.filter { $0.period == period.rawValue }
                 guard let latest = values.max(by: { $0.savedAt < $1.savedAt }) else { continue }
                 settingsLabel(L("%@ · %ld 个网站", period.title, values.count), in: body, frame: NSRect(x: 32, y: y, width: 376, height: 18), size: 11)
@@ -368,7 +395,7 @@ final class SettingsWindowController: NSWindowController {
             preferences.setLayout(layout, for: candidate.base)
             _ = preferences.reconcileMenuSource(selected: selected.map(\.id))
             saved = candidate; key.stringValue = ""; needsConnectionCommit = false; listError = nil
-            footerStatus = oldMode == .website && preferences.menuDisplay == .total ? L("数字来源已取消关注，已改为合计访客。") : L("已保存")
+            footerStatus = oldMode.single && preferences.menuDisplay == .total ? L("数字来源已取消关注，已改为合计访客。") : L("已保存")
             if close { window?.close() } else { reloadList() }
         } catch { listError = error.localizedDescription; footerStatus = L("保存失败，请重试。"); render() }
     }

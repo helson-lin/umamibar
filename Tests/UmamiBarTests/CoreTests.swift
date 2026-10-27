@@ -2,6 +2,26 @@ import XCTest
 @testable import UmamiBar
 
 final class CoreTests: XCTestCase {
+    func testBreakdownRowsExpandPastTopFive() {
+        var state = PanelState(screen: "detail", loading: false, period: .day, start: Date(), end: Date(), updated: "", sites: [])
+        state.rows = (0..<12).map { MetricRow(x: "/\($0)", y: Double(20 - $0)) }
+        let collapsed = DetailBody.rowsLayout(state)
+        XCTAssertEqual(collapsed.visible, 5)
+        XCTAssertNotNil(collapsed.toggle)
+        state.detailExpanded = true
+        let expanded = DetailBody.rowsLayout(state)
+        XCTAssertEqual(expanded.visible, 12)
+        XCTAssertEqual(expanded.toggle!.minY - collapsed.toggle!.minY, 7 * 32)
+        XCTAssertGreaterThan(expanded.height, collapsed.height)
+        // Five rows or fewer: no toggle, and the footnote stays where it always was.
+        state.rows = Array(state.rows!.prefix(5))
+        XCTAssertNil(DetailBody.rowsLayout(state).toggle)
+        XCTAssertEqual(DetailBody.rowsLayout(state).footnote, 569)
+        state.detailLoading = true; state.rows = (0..<12).map { MetricRow(x: "/\($0)", y: 1) }
+        XCTAssertNil(DetailBody.rowsLayout(state).toggle)
+        XCTAssertEqual(DetailDimension.pages.fetchLimit, 100)
+        XCTAssertEqual(DetailDimension.events.fetchLimit, 500)
+    }
     func testDetailDimensionsAndMissingLabels() throws {
         XCTAssertEqual(DetailDimension.options(for: "utm").map(\.rawValue), ["utmSource", "utmMedium", "utmCampaign", "utmTerm", "utmContent"])
         XCTAssertEqual(DetailDimension.options(for: "location").map(\.rawValue), ["country", "region", "city"])
@@ -16,10 +36,19 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(DetailDimension.utmCampaign.label(for: nil), L("未设置"))
         XCTAssertEqual(DetailDimension.city.label(for: "  "), L("未知位置"))
         XCTAssertEqual(DetailDimension.sources.label(for: nil), L("直接访问"))
+        XCTAssertEqual(DetailDimension.options(for: "events"), [.events])
+        XCTAssertEqual(DetailDimension.events.label(for: nil), L("未命名事件"))
         XCTAssertEqual(DetailDimension.country.label(for: "US", locale: Locale(identifier: "en_US")), "United States")
         XCTAssertEqual(DetailDimension.city.label(for: "San Francisco"), "San Francisco")
     }
 
+    func testActiveVisitorsAcrossUmamiVersions() throws {
+        for json in [#"{"visitors":7}"#, #"{"x":7}"#, #"[{"x":7}]"#] {
+            XCTAssertEqual(try JSONDecoder().decode(Active.self, from: Data(json.utf8)).visitors, 7, json)
+        }
+        XCTAssertEqual(try JSONDecoder().decode(Active.self, from: Data("[]".utf8)).visitors, 0)
+        XCTAssertThrowsError(try JSONDecoder().decode(Active.self, from: Data(#"{"pageviews":3}"#.utf8)))
+    }
     func testConnectionNormalization() throws {
         XCTAssertEqual(try Connection.baseURL("https://api.umami.is").absoluteString, "https://api.umami.is/v1")
         XCTAssertEqual(try Connection.baseURL("https://stats.example.com").path, "/api")
@@ -43,6 +72,27 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(calendar.component(.month, from: start), 2)
         XCTAssertEqual(calendar.component(.day, from: start), 29)
         XCTAssertEqual(end.timeIntervalSince(Period.day.start(before: end)), 86400)
+    }
+    func testTodayComparesWithYesterdaySoFar() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 16, minute: 28))!
+        let start = Period.today.start(before: end, calendar: calendar)
+        XCTAssertEqual(start, calendar.date(from: DateComponents(year: 2026, month: 10, day: 15)))
+        let previous = Period.today.previous(before: end, calendar: calendar)
+        XCTAssertEqual(previous.start, calendar.date(from: DateComponents(year: 2026, month: 10, day: 14)))
+        XCTAssertEqual(previous.end.timeIntervalSince(calendar.date(from: DateComponents(year: 2026, month: 10, day: 14, hour: 16, minute: 28))!), -0.001, accuracy: 0.0001)
+        // Rolling ranges still compare with the equally long window right before them.
+        let rolling = Period.week.previous(before: end, calendar: calendar)
+        XCTAssertEqual(end.timeIntervalSince(rolling.start), 14 * 86400)
+        XCTAssertEqual(Period.today.unit, "hour")
+        XCTAssertEqual(Period.displayOrder.first, .today)
+        XCTAssertEqual(Set(Period.displayOrder), Set(Period.allCases))
+        let buckets = try TimeBuckets.expand([Point(x: "2026-10-15 09:00:00", y: 4)], period: .today, end: end, calendar: calendar)
+        XCTAssertEqual(buckets.count, 17) // 00:00 through the partial 16:00 hour
+        XCTAssertEqual(buckets[9].y, 4)
+        XCTAssertEqual(Stats.change(current: 10, previous: 20, period: .today), "↓ 50.0% 较昨日同时段")
+        XCTAssertEqual(Stats.change(current: 3, previous: 0, period: .today), "新增 · 昨日同时段为 0")
     }
 
     func testSparseSeriesPreservesHourlyPosition() throws {

@@ -79,11 +79,29 @@ struct Stats: Codable {
         let seconds = max(0, Int(totalTime / Double(visits - bounces)))
         return seconds < 60 ? L("%ld秒", seconds) : L("%ld分%ld秒", seconds / 60, seconds % 60)
     }
-    static func change(current: Int?, previous: Int?) -> String {
-        guard let current = current, let previous = previous else { return L("— 较上期") }
-        if previous == 0 { return current > 0 ? L("新增 · 上期为 0") : L("— 持平") }
+    static func change(current: Int?, previous: Int?, period: Period? = nil) -> String {
+        let yesterday = period == .today
+        guard let current = current, let previous = previous else { return yesterday ? L("— 较昨日同时段") : L("— 较上期") }
+        if previous == 0 { return current > 0 ? (yesterday ? L("新增 · 昨日同时段为 0") : L("新增 · 上期为 0")) : L("— 持平") }
         let percent = Double(current - previous) / Double(previous) * 100
-        return L("%@ %.1f%% 较上期", percent > 0 ? "↑" : percent < 0 ? "↓" : "—", abs(percent))
+        let arrow = percent > 0 ? "↑" : percent < 0 ? "↓" : "—"
+        return yesterday ? L("%@ %.1f%% 较昨日同时段", arrow, abs(percent)) : L("%@ %.1f%% 较上期", arrow, abs(percent))
+    }
+}
+/// Visitors active in the last 5 minutes. Umami versions answer {"visitors": n}, {"x": n} or [{"x": n}].
+struct Active: Decodable {
+    let visitors: Int
+    private enum CodingKeys: String, CodingKey { case visitors, x }
+    init(from decoder: Decoder) throws {
+        if var list = try? decoder.unkeyedContainer() {
+            visitors = list.isAtEnd ? 0 : try list.decode(Active.self).visitors
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard let value = try c.decodeIfPresent(Double.self, forKey: .visitors) ?? c.decodeIfPresent(Double.self, forKey: .x) else {
+            throw DecodingError.dataCorruptedError(forKey: .visitors, in: c, debugDescription: "Missing active visitor count")
+        }
+        visitors = max(0, Int(value))
     }
 }
 struct MetricRow: Codable {
@@ -94,6 +112,7 @@ enum DetailDimension: String, CaseIterable {
     case pages = "path", sources = "referrer"
     case utmSource, utmMedium, utmCampaign, utmTerm, utmContent
     case country, region, city
+    case events = "event"
 
     var category: String {
         switch self {
@@ -101,8 +120,12 @@ enum DetailDimension: String, CaseIterable {
         case .sources: return "sources"
         case .utmSource, .utmMedium, .utmCampaign, .utmTerm, .utmContent: return "utm"
         case .country, .region, .city: return "location"
+        case .events: return "events"
         }
     }
+    /// Rows requested per breakdown. The detail shows the top 5 and can expand to all of them;
+    /// shares are of every loaded row. Events ask for more so their shares cover nearly every event.
+    var fetchLimit: Int { self == .events ? 500 : 100 }
     static func options(for category: String) -> [DetailDimension] {
         allCases.filter { $0.category == category }
     }
@@ -118,6 +141,7 @@ enum DetailDimension: String, CaseIterable {
         case .country: return L("国家 / 地区")
         case .region: return L("省份 / 州")
         case .city: return L("城市")
+        case .events: return L("事件名称")
         }
     }
     func label(for value: String?, locale: Locale = .current) -> String {
@@ -126,6 +150,7 @@ enum DetailDimension: String, CaseIterable {
             case .pages: return "/"
             case .sources: return L("直接访问")
             case .country, .region, .city: return L("未知位置")
+            case .events: return L("未命名事件")
             default: return L("未设置")
             }
         }
@@ -134,15 +159,29 @@ enum DetailDimension: String, CaseIterable {
     }
 }
 enum Period: Int, CaseIterable {
-    case day, week, month
-    var title: String { [L("最近 24 小时"), L("最近 7 天"), L("最近一个月")][rawValue] }
-    var unit: String { self == .day ? "hour" : "day" }
+    // Raw values are saved in preferences and snapshots, so new ranges are appended.
+    case day, week, month, today
+    /// Left-to-right order of the range segments.
+    static let displayOrder: [Period] = [.today, .day, .week, .month]
+    var title: String { [L("最近 24 小时"), L("最近 7 天"), L("最近一个月"), L("今天")][rawValue] }
+    var hourly: Bool { self == .day || self == .today }
+    var unit: String { hourly ? "hour" : "day" }
     func start(before end: Date, calendar: Calendar = .current) -> Date {
         switch self {
+        case .today: return calendar.startOfDay(for: end)
         case .day: return end.addingTimeInterval(-86400)
         case .week: return end.addingTimeInterval(-7 * 86400)
         case .month: return calendar.date(byAdding: .month, value: -1, to: end) ?? end
         }
+    }
+    /// The comparison window. Today compares with yesterday up to the same clock time;
+    /// rolling ranges compare with the equally long window right before them.
+    func previous(before end: Date, calendar: Calendar = .current) -> (start: Date, end: Date) {
+        let start = start(before: end, calendar: calendar)
+        if self == .today, let from = calendar.date(byAdding: .day, value: -1, to: start), let to = calendar.date(byAdding: .day, value: -1, to: end) {
+            return (from, to.addingTimeInterval(-0.001))
+        }
+        return (start.addingTimeInterval(-end.timeIntervalSince(start)), start.addingTimeInterval(-0.001))
     }
     func query(end: Date) -> [URLQueryItem] {
         [URLQueryItem(name: "startAt", value: String(Int(start(before: end).timeIntervalSince1970 * 1000))),

@@ -102,4 +102,23 @@ final class RefreshTests: XCTestCase {
         controller.refreshIfNeeded(); wait(for: [done], timeout: 3); controller.onSummary = nil
         XCTAssertEqual(store.records(base: connection.base, period: .day)["a"]?.end, old.end)
     }
+    func testLiveCountsFeedMenuAndFailuresShowUnavailable() throws {
+        let (preferences, store, connection, api, _) = try fixture()
+        preferences.menuDisplay = .live
+        var activeStatus = 200
+        FixtureProtocol.response = { request in
+            request.url!.path.hasSuffix("/active") ? (activeStatus, Data(#"{"visitors":5}"#.utf8)) : (500, Data())
+        }
+        let controller = MainController(preferences: preferences, snapshots: store, api: api, connectionOverride: connection, selectedSites: [Website(id: "a", name: "A", domain: "a.test")])
+        let loaded = expectation(description: "live count shown")
+        controller.onSummary = { summary in if summary.count == 5 { XCTAssertTrue(summary.live); loaded.fulfill() } }
+        controller.refreshLive(); wait(for: [loaded], timeout: 3)
+        // A recent attempt is not repeated until maxAge passes.
+        controller.onSummary = { _ in XCTFail("refreshed too soon") }
+        controller.refreshLive(maxAge: 60)
+        activeStatus = 500
+        let failed = expectation(description: "failed live count is unavailable, not zero")
+        controller.onSummary = { summary in if summary.count == nil { XCTAssertFalse(summary.live); failed.fulfill() } }
+        controller.refreshLive(maxAge: 0); wait(for: [failed], timeout: 3); controller.onSummary = nil
+    }
 }
